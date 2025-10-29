@@ -1,34 +1,36 @@
 // src/i18n.js
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector'; // Lỗi xảy ra ở dòng này
+// Đảm bảo không có lỗi ở các dòng import plugin
+import LanguageDetector from 'i18next-browser-languagedetector';
 import HttpApi from 'i18next-http-backend';
 
 // Cấu hình i18next
 i18n
-  .use(HttpApi) // Tải file dịch từ /public/locales
-  .use(LanguageDetector) // Tự phát hiện ngôn ngữ
-  .use(initReactI18next) // Kết nối với React
+  .use(HttpApi)
+  .use(LanguageDetector)
+  .use(initReactI18next)
   .init({
     // Cấu hình cơ bản
-    debug: false, // Tắt debug khi triển khai production
-    supportedLngs: ['en', 'vi'], // Ngôn ngữ hỗ trợ
-    fallbackLng: 'vi', // Ngôn ngữ mặc định
+    debug: false, 
+    supportedLngs: ['en', 'vi'],
+    fallbackLng: 'vi', 
     
     // Cấu hình phát hiện ngôn ngữ
     detection: {
       order: ['localStorage', 'cookie', 'htmlTag', 'path', 'subdomain'],
-      caches: ['localStorage', 'cookie'], // Lưu lựa chọn ngôn ngữ
+      caches: ['localStorage', 'cookie'],
     },
     
     // Cấu hình Backend (Load translations)
     backend: {
-      loadPath: '/locales/{{lng}}/translation.json', // Đường dẫn file dịch
+      // Đảm bảo đường dẫn này là chính xác trên Vercel (nó phải nằm trong thư mục 'public')
+      loadPath: '/locales/{{lng}}/translation.json', 
     },
     
     // Cấu hình React
     react: {
-      useSuspense: true, // Dùng Suspense để chờ tải
+      useSuspense: true, 
     },
     
     // Định nghĩa namespace mặc định
@@ -37,4 +39,4 @@ i18n
 
   });
 
-export default i18n; // Xuất instance để main.jsx dùng
+export default i18n;
