@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { GoogleLogin } from "@react-oauth/google"; // <--- Import Google Login
 import "./auth.css";
 import loginArt from "../assets/DangNhap/login-art.png";
-import { BsEnvelope, BsLock, BsArrowLeft, BsExclamationCircle } from "react-icons/bs"; // Thêm icons
+import { BsEnvelope, BsLock, BsArrowLeft, BsExclamationCircle } from "react-icons/bs";
 
 const Login = ({ onLoginSuccess }) => {
   const navigate = useNavigate();
@@ -20,6 +21,15 @@ const Login = ({ onLoginSuccess }) => {
     return re.test(String(email).toLowerCase());
   };
 
+  // --- Xử lý kết quả Login (Dùng chung cho cả thường và Google) ---
+  const handleAuthResponse = (data) => {
+    localStorage.setItem("role", data.user.role); 
+    localStorage.setItem("user", JSON.stringify(data.user));
+    localStorage.setItem("token", data.token);
+    onLoginSuccess(); // Gọi hàm của cha để cập nhật state App
+  };
+
+  // --- 1. LOGIC ĐĂNG NHẬP THƯỜNG ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -48,10 +58,7 @@ const Login = ({ onLoginSuccess }) => {
       const data = await res.json();
 
       if (res.ok) {
-        localStorage.setItem("role", data.user.role); 
-        localStorage.setItem("user", JSON.stringify(data.user));
-        localStorage.setItem("token", data.token);
-        onLoginSuccess();
+        handleAuthResponse(data);
       } else {
         setError(data.message || "Đã xảy ra lỗi");
         setLoading(false);
@@ -63,9 +70,36 @@ const Login = ({ onLoginSuccess }) => {
     } 
   };
 
+  // --- 2. LOGIC ĐĂNG NHẬP GOOGLE ---
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setLoading(true);
+    setError("");
+    
+    try {
+      // Gửi token Google về backend để xác thực
+      const res = await fetch("http://localhost:5000/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: credentialResponse.credential }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        handleAuthResponse(data);
+      } else {
+        setError(data.message || "Đăng nhập Google thất bại");
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Lỗi Google API:", error);
+      setError("Lỗi kết nối khi đăng nhập Google");
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="auth-container">
-      {/* Nút quay về trang chủ */}
       <Link to="/" className="btn-back-home"><BsArrowLeft /> Trang chủ</Link>
 
       <div className="auth-box">
@@ -95,7 +129,7 @@ const Login = ({ onLoginSuccess }) => {
                 placeholder="Email của bạn"
                 value={formData.email}
                 onChange={handleChange}
-                required
+                // Bỏ required để tránh lỗi form khi nhấn nút Google (nếu nút Google nằm trong form)
               />
             </div>
 
@@ -108,7 +142,6 @@ const Login = ({ onLoginSuccess }) => {
                 placeholder="Mật khẩu"
                 value={formData.password}
                 onChange={handleChange}
-                required
               />
             </div>
 
@@ -122,7 +155,35 @@ const Login = ({ onLoginSuccess }) => {
               {loading ? "Đang xác thực..." : "Đăng nhập ngay"}
             </button>
 
-            <div className="auth-links" style={{justifyContent: 'center'}}>
+            {/* --- PHẦN GOOGLE LOGIN MỚI --- */}
+            <div style={{ margin: "20px 0", position: "relative", textAlign: "center" }}>
+                <hr style={{ border: "0", borderTop: "1px solid #eee" }} />
+                <span style={{ 
+                    position: "absolute", 
+                    top: "-10px", 
+                    left: "50%", 
+                    transform: "translateX(-50%)", 
+                    background: "#fff", 
+                    padding: "0 10px",
+                    color: "#888",
+                    fontSize: "0.9em"
+                }}>Hoặc</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={() => setError("Đăng nhập Google thất bại")}
+                    useOneTap
+                    theme="outline"
+                    shape="pill"
+                    text="signin_with"
+                    width="300" // Chỉnh độ rộng cho đẹp
+                />
+            </div>
+            {/* ----------------------------- */}
+
+            <div className="auth-links" style={{justifyContent: 'center', marginTop: '20px'}}>
               <p>
                 Chưa có tài khoản?{" "}
                 <Link to="/register" className="auth-link">

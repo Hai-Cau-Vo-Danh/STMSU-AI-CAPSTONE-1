@@ -25,7 +25,6 @@ const MainNavbar = () => {
     { path: '/app/notes', labelKey: 'sidebar.notes', icon: <BsJournalText /> },
     { path: '/app/calendar', labelKey: 'sidebar.calendar', icon: <BsCalendarWeek /> },
     { path: '/app/pomodoro', labelKey: 'sidebar.pomodoro', icon: <BsStopwatch /> },
-    { path: '/app/ai-assistant', labelKey: 'sidebar.aiAssistant', icon: <BsStars /> }, 
     { path: '/app/workspaces', labelKey: 'sidebar.workspaces', icon: <BsColumnsGap /> },
     { path: '/app/study-room', labelKey: 'sidebar.studyRoom', icon: <BsBookHalf /> },
     { path: '/app/settings', labelKey: 'sidebar.settings', icon: <BsGear /> },

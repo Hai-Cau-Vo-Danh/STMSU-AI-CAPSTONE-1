@@ -1,0 +1,226 @@
+/* Container Overlay (Nền tối mờ bao phủ toàn màn hình) */
+.premium-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7); /* Tối hơn để nổi bật nội dung */
+  z-index: 9999; /* Đảm bảo nằm trên cùng */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(5px);
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Container chứa 3 cột */
+.premium-modal-container {
+  display: flex;
+  gap: 20px;
+  max-width: 1100px;
+  width: 95%;
+  position: relative;
+  align-items: center; /* Căn giữa theo chiều dọc để cột giữa to hơn */
+}
+
+/* Nút tắt X */
+.premium-close-btn {
+  position: absolute;
+  top: -50px;
+  right: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s;
+}
+.premium-close-btn:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* --- STYLE CHUNG CHO CARD --- */
+.pricing-card {
+  background: #ffffff; /* Màu nền trắng tuyệt đối */
+  border-radius: 20px;
+  padding: 40px 30px;
+  flex: 1; /* Chia đều chiều rộng */
+  text-align: center;
+  position: relative;
+  transition: transform 0.3s ease;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  height: 500px; /* Chiều cao cố định cho 2 cột bên */
+  color: #333; /* Màu chữ mặc định */
+}
+
+/* --- CỘT PRO AI (NỔI BẬT) --- */
+.pricing-card.popular {
+  height: 580px; /* Cao hơn 2 cột kia */
+  border: 2px solid #8b5cf6; /* Viền tím */
+  box-shadow: 0 20px 60px rgba(139, 92, 246, 0.25);
+  z-index: 10;
+  transform: scale(1.02);
+}
+
+.popular-badge {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #6366f1; /* Màu tím xanh */
+  color: white;
+  padding: 8px 24px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.4);
+}
+
+/* Header của Card */
+.card-header h3 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 15px;
+  color: #1f2937;
+}
+
+.text-highlight {
+  color: #8b5cf6 !important; /* Màu tím cho chữ Pro AI */
+}
+
+.price {
+  font-size: 48px;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.period {
+  font-size: 15px;
+  color: #6b7280;
+  margin-bottom: 30px;
+}
+
+/* Danh sách tính năng */
+.feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 auto 0; /* Đẩy nút xuống đáy */
+  text-align: left;
+}
+
+.feature-list li {
+  padding: 12px 0;
+  font-size: 15px;
+  color: #4b5563;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feature-list li.disabled {
+  color: #d1d5db;
+  text-decoration: line-through; /* Gạch ngang */
+}
+
+.check-icon {
+  color: #10b981; /* Màu xanh lá cho dấu tích */
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.check-icon.highlight {
+  color: #8b5cf6; /* Màu tím cho gói Pro */
+}
+
+/* Nút bấm */
+.btn-plan {
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.3s;
+  margin-top: 20px;
+}
+
+.btn-starter {
+  background: #f3f4f6;
+  color: #9ca3af;
+  border: 1px solid #e5e7eb;
+  cursor: default;
+}
+
+.btn-pro {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+}
+
+.btn-pro:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(139, 92, 246, 0.5);
+}
+
+.btn-team {
+  background: white;
+  border: 2px solid #e5e7eb;
+  color: #4b5563;
+}
+
+.btn-team:hover {
+  border-color: #8b5cf6;
+  color: #8b5cf6;
+  background: #f9fafb;
+}
+
+.trial-text {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 15px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 900px) {
+  .premium-modal-container {
+    flex-direction: column;
+    height: 90vh;
+    overflow-y: auto;
+    padding-top: 60px;
+    width: 90%;
+  }
+  
+  .pricing-card {
+    width: 100%;
+    height: auto;
+    margin-bottom: 20px;
+  }
+  
+  .pricing-card.popular {
+    transform: none;
+    order: -1; /* Đưa gói Pro lên đầu trên mobile */
+    height: auto;
+  }
+  
+  .premium-close-btn {
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.5);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

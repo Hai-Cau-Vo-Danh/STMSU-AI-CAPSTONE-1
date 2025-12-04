@@ -705,3 +705,95 @@ body.dark .suggestion-icon {
   background-color: transparent !important;
   cursor: default;
 }
+/* ... (Giữ nguyên toàn bộ nội dung cũ của bạn) ... */
+
+/* --- THÊM VÀO CUỐI FILE --- */
+
+/* Nút Premium trên Header */
+.premium-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); /* Màu vàng kim */
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px; /* Bo tròn hình viên thuốc */
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(255, 215, 0, 0.4); /* Đổ bóng vàng */
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.premium-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(255, 215, 0, 0.6);
+  background: linear-gradient(135deg, #FFC107 0%, #FF9800 100%);
+}
+
+.premium-icon {
+  font-size: 16px;
+}
+
+/* Ẩn chữ trên màn hình nhỏ để tiết kiệm chỗ */
+@media (max-width: 768px) {
+  .premium-btn span {
+    display: none;
+  }
+  .premium-btn {
+    padding: 8px;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+}
+/* Huy hiệu cho người đã lên VIP */
+.vip-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); /* Màu tím mộng mơ */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 6px 12px;
+  border-radius: 20px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: default;
+  margin-right: 8px;
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+  letter-spacing: 0.5px;
+  animation: glow 3s infinite alternate;
+}
+
+.vip-icon {
+  font-size: 14px;
+}
+
+/* Hiệu ứng phát sáng nhẹ cho VIP */
+@keyframes glow {
+  from {
+    box-shadow: 0 0 5px rgba(168, 85, 247, 0.2);
+  }
+  to {
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+  }
+}
+
+/* Responsive cho mobile */
+@media (max-width: 768px) {
+  .vip-badge .vip-text {
+    display: none; /* Ẩn chữ trên mobile */
+  }
+  .vip-badge {
+    padding: 6px;
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    border-radius: 50%;
+  }
+}

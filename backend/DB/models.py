@@ -1,3 +1,5 @@
+from sqlalchemy import event
+import threading
 from sqlalchemy import Column, Integer, BigInteger, String, Text, Boolean, DateTime, ForeignKey, TIMESTAMP, JSON, UniqueConstraint,Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -22,7 +24,10 @@ class User(Base):
     equipped_frame_url = Column(String(255), nullable=True) # URL khung avatar
     equipped_title = Column(String(100), nullable=True)     # Danh hiệu (VD: "Bá chủ")
     equipped_name_color = Column(String(20), nullable=True) # Mã màu tên (VD: "#FFD700")
-    rank_title = Column(String(50), nullable=True)
+    rank_title = Column(String(50), nullable=True)    
+    
+    is_premium = Column(Boolean, default=False)
+    premium_expiry = Column(DateTime, nullable=True)  
 
     # Relationships
     settings = relationship('UserSetting', back_populates='user', uselist=False, cascade='all, delete-orphan')
@@ -387,7 +392,120 @@ class UserItem(Base):
     
     user = relationship('User', back_populates='inventory')
     item = relationship('ShopItem')    
+# --- EVENT LISTENERS (AI TRIGGERS) ---
+
+# 1. TRIGGER: Khi tạo Task mới -> Tự động đoán Priority & Label
+@event.listens_for(Task, 'before_insert')
+def task_before_insert(mapper, connection, target):
+    try:
+        # Import ở đây để tránh lỗi circular import
+        from ai_engine import analyze_task_semantics 
+        
+        print(f"🧠 AI đang phân tích task: {target.title}")
+        analysis = analyze_task_semantics(target.title, target.description or "")
+        
+        # Tự động cập nhật dữ liệu trước khi lưu vào DB
+        if analysis.get('priority'):
+            target.priority = analysis['priority']
+        
+        # (Nếu bạn có cột Label/Tag trong bảng Task thì gán vào đây)
+        # target.category = analysis['category'] 
+        
+    except Exception as e:
+        print(f"⚠️ AI Analysis Failed: {e}")
+
+# 2. TRIGGER: Khi tạo Comment mới -> Kiểm duyệt
+@event.listens_for(Comment, 'before_insert')
+def comment_before_insert(mapper, connection, target):
+    try:
+        from ai_engine import moderate_content
+        
+        print(f"🛡️ AI đang kiểm duyệt comment...")
+        check = moderate_content(target.content)
+        
+        if check.get('is_toxic'):
+            # Cách 1: Chặn luôn (Raise error)
+            # raise ValueError(f"Nội dung tiêu cực! Gợi ý: {check['suggestion']}")
+            
+            # Cách 2: Censor (Che đi)
+            target.content = f"🚫 [Nội dung đã bị AI ẩn vì vi phạm tiêu chuẩn cộng đồng]. Gợi ý: {check.get('suggestion')}"
+            
+    except Exception as e:
+        print(f"⚠️ AI Moderation Error: {e}")
+
+# 3. TRIGGER: Sau khi tạo Task xong -> Tự động tạo Checklist (Chạy ngầm)
+@event.listens_for(Task, 'after_insert')
+def task_after_insert(mapper, connection, target):
+    # Vì Task đã lưu rồi, muốn tạo Checklist con ta phải mở Session mới
+    # Việc này nên chạy Thread riêng để không làm user phải chờ
+    def async_breakdown(task_id, title, deadline):
+        from DB.database import get_db # Import generator
+        from ai_engine import generate_subtasks_ai
+        # Lưu ý: Cần import ChecklistItem, CardChecklist nếu task là Card, 
+        # Nhưng ở đây Task là bảng 'tasks' cá nhân, bạn chưa có bảng 'Subtask' cho Task cá nhân.
+        # Tôi giả định bạn muốn làm điều này cho BoardCard (Workspaces) vì nó có Checklist.
+        pass 
+
+    # Ví dụ áp dụng cho BoardCard (Workspace) thay vì Task cá nhân
+    pass
+
+# Áp dụng cho BoardCard (Workspace) - Tự động tạo checklist
+@event.listens_for(BoardCard, 'after_insert')
+def card_after_insert(mapper, connection, target):
+    def create_ai_checklist():
+        from DB.database import get_db
+        from ai_engine import generate_subtasks_ai
+        
+        print(f"⚡ AI đang chia nhỏ công việc cho Card ID: {target.card_id}")
+        steps = generate_subtasks_ai(target.title, str(target.due_date))
+        
+        if steps:
+            # Mở kết nối DB mới để lưu checklist
+            db = next(get_db())
+            try:
+                # 1. Tạo Checklist cha
+                new_checklist = CardChecklist(
+                    card_id=target.card_id,
+                    title="AI Breakdown (Các bước gợi ý)",
+                    position=0
+                )
+                db.add(new_checklist)
+                db.commit()
+                db.refresh(new_checklist)
+                
+                # 2. Tạo Items
+                items = []
+                for i, step in enumerate(steps):
+                    items.append(ChecklistItem(
+                        checklist_id=new_checklist.checklist_id,
+                        title=step['title'],
+                        position=i
+                    ))
+                db.add_all(items)
+                db.commit()
+                print(f"✅ AI đã tạo {len(items)} bước nhỏ cho card {target.card_id}")
+            except Exception as e:
+                print(f"❌ Lỗi lưu checklist AI: {e}")
+            finally:
+                db.close()
+
+    # Chạy luồng riêng để không chặn UI
+    thread = threading.Thread(target=create_ai_checklist)
+    thread.start()  
     
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    
+    transaction_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
+    order_id = Column(String(100), unique=True, nullable=False) # Mã đơn hàng (VD: 20251203_12345)
+    amount = Column(Integer, nullable=False) # Số tiền (VNĐ)
+    provider = Column(String(50), nullable=False) # 'vnpay' hoặc 'momo'
+    bank_code = Column(String(50), nullable=True) # Mã ngân hàng (nếu có)
+    status = Column(String(50), default='pending') # pending, success, failed
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    
+    user = relationship('User')   
 # --- SCRIPT TO CREATE/UPDATE TABLES ---
 if __name__ == "__main__":
     from DB.database import engine

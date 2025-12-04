@@ -1,11 +1,13 @@
-// src/components/TaskBoard.jsx
 import React, { useState, useEffect } from 'react';
 import TaskCard from './TaskCard';
 import './TaskBoard.css';
 import { BsPlus, BsThreeDots, BsSearch, BsTag } from 'react-icons/bs';
 import { IoClose, IoSparkles } from 'react-icons/io5';
 
-// Imports từ @dnd-kit
+// --- 1. Import Socket chung ---
+import { socket } from '../socket'; 
+
+// --- 2. Import DnD Kit ---
 import {
     DndContext,
     closestCorners,
@@ -14,7 +16,7 @@ import {
     useSensor,
     useSensors,
     DragOverlay,
-    useDroppable // <-- (ĐÃ SỬA) Đã import
+    useDroppable
 } from '@dnd-kit/core';
 import {
     arrayMove,
@@ -25,8 +27,7 @@ import {
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-
-// Component bọc TaskCard (giữ nguyên)
+// --- COMPONENT CON: Item có thể kéo ---
 const SortableTaskItem = ({ task, columnId, openEditModal }) => { 
     const {
         attributes,
@@ -37,10 +38,7 @@ const SortableTaskItem = ({ task, columnId, openEditModal }) => {
         isDragging
     } = useSortable({ 
         id: task.id,
-        data: {
-            columnId: columnId,
-            taskId: task.id
-        }
+        data: { columnId: columnId, taskId: task.id }
     });
 
     const style = {
@@ -49,10 +47,10 @@ const SortableTaskItem = ({ task, columnId, openEditModal }) => {
         opacity: isDragging ? 0.4 : 1,
     };
 
+    // Format ngày hiển thị
     const deadlineString = task.deadline && typeof task.deadline === 'string' 
                             ? task.deadline.split('T')[0] 
                             : task.deadline;
-                            
     const displayDate = deadlineString ? new Date(deadlineString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '';
 
     return (
@@ -71,31 +69,22 @@ const SortableTaskItem = ({ task, columnId, openEditModal }) => {
     );
 };
 
-
-// Component Droppable cho Cột (giữ nguyên)
+// --- COMPONENT CON: Vùng thả (Cột) ---
 function DroppableTaskColumn({ columnId, children, isOver }) {
   const { setNodeRef } = useDroppable({
     id: columnId, 
-    data: {
-      type: 'column' 
-    }
+    data: { type: 'column' }
   });
 
   return (
-    <div 
-      ref={setNodeRef} 
-      className={`column-content ${isOver ? 'droppable-over-column' : ''}`}
-    >
+    <div ref={setNodeRef} className={`column-content ${isOver ? 'droppable-over-column' : ''}`}>
       {children}
     </div>
   );
 }
 
-
-// Component Cột (giữ nguyên)
+// --- COMPONENT CON: Cột Task ---
 const TaskColumn = ({ columnId, title, tasksCount, tasks, openCreateModal, openEditModal }) => { 
-    const [isCardOver, setIsCardOver] = useState(false); // (Giữ nguyên, sẽ dùng sau)
-
     return (
         <div className="task-column">
             <div className="column-header">
@@ -109,7 +98,7 @@ const TaskColumn = ({ columnId, title, tasksCount, tasks, openCreateModal, openE
                 </div>
             </div>
             
-            <DroppableTaskColumn columnId={columnId} isOver={isCardOver}>
+            <DroppableTaskColumn columnId={columnId} isOver={false}>
                 <SortableContext
                     items={tasks.map(task => task.id)}
                     strategy={verticalListSortingStrategy}
@@ -122,7 +111,6 @@ const TaskColumn = ({ columnId, title, tasksCount, tasks, openCreateModal, openE
                             openEditModal={openEditModal} 
                         />
                     ))}
-                    
                     {tasks.length === 0 && (
                         <div className="empty-column-placeholder">
                             Kéo thẻ vào đây
@@ -136,10 +124,8 @@ const TaskColumn = ({ columnId, title, tasksCount, tasks, openCreateModal, openE
     );
 };
 
-
-
+// --- COMPONENT CHÍNH ---
 const TaskBoard = () => {
-    // (Các state giữ nguyên)
     const [searchQuery, setSearchQuery] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
@@ -151,6 +137,8 @@ const TaskBoard = () => {
     const [error, setError] = useState(null);
     const [columns, setColumns] = useState({});
     const [activeTask, setActiveTask] = useState(null);
+    
+    // Form state cho tạo mới
     const [newTask, setNewTask] = useState({
         title: '', description: '', priority: 'medium', deadline: '', tags: []
     });
@@ -160,29 +148,23 @@ const TaskBoard = () => {
         catch (e) { console.error("Lỗi user ID:", e); return null; }
     };
 
-    // (fetchTasks giữ nguyên)
+    // --- 1. LOAD DATA TỪ API ---
     const fetchTasks = async () => {
         setIsLoading(true);
         setError(null);
         const userId = getUserId();
         if (!userId) {
-            setError("Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại.");
+            setError("Không tìm thấy thông tin người dùng.");
             setIsLoading(false);
             return;
         }
         try {
             const response = await fetch(`http://localhost:5000/api/tasks?userId=${userId}`);
-            if (!response.ok) {
-                 if (response.status === 404) throw new Error(`API /api/tasks không tồn tại (404).`);
-                 if (response.status === 500) throw new Error(`Lỗi 500. Kiểm tra terminal backend (lỗi CSDL?).`);
-                 throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json(); 
-            if (!Array.isArray(data)) {
-                console.error("API /api/tasks không trả về mảng (Array). Dữ liệu:", data);
-                throw new Error("Dữ liệu nhận được từ server không đúng định dạng (không phải mảng).");
-            }
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             
+            const data = await response.json(); 
+            
+            // Chuyển đổi dữ liệu API thành object columns
             const columnsObject = data.reduce((acc, col) => {
                 if (col && col.id) {
                      acc[col.id] = { ...col, tasks: col.tasks || [] };
@@ -190,6 +172,7 @@ const TaskBoard = () => {
                 return acc;
             }, {}); 
             
+            // Đảm bảo thứ tự cột chuẩn
             const allColumnIds = ['todo', 'inprogress', 'review', 'done']; 
             const finalizedColumns = {};
             const titleMap = { 
@@ -198,6 +181,7 @@ const TaskBoard = () => {
                 'review': columnsObject['review']?.title || 'In Review', 
                 'done': columnsObject['done']?.title || 'Done' 
             };
+            
             allColumnIds.forEach(id => {
                 finalizedColumns[id] = {
                     id: id,
@@ -209,48 +193,62 @@ const TaskBoard = () => {
             setColumns(finalizedColumns);
         } catch (err) {
             setError(`Không thể tải công việc: ${err.message}`);
-            console.error("Fetch error:", err);
         } finally {
             setIsLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchTasks();
-    }, []); 
+    // --- 2. LẮNG NGHE SOCKET REAL-TIME ---
+   useEffect(() => {
+        fetchTasks(); // Load lần đầu
 
-    // (parseNaturalLanguage giữ nguyên)
-    const parseNaturalLanguage = (input) => { /* ... giữ nguyên code parse ... */
+        // Khi AI tạo task xong -> Gọi hàm fetchTasks để load lại từ DB
+        const handleRefetch = (data) => {
+            console.log("↻ Socket: Có task mới, đang tải lại bảng...", data);
+            fetchTasks(); // <--- QUAN TRỌNG: Tải lại toàn bộ từ DB
+        };
+
+        socket.on('new_task', handleRefetch);
+
+        return () => {
+            socket.off('new_task', handleRefetch);
+        };
+    }, []);
+
+    // --- 3. CÁC HÀM XỬ LÝ LOGIC KHÁC ---
+    const parseNaturalLanguage = (input) => { 
         const parsed = { title: input, priority: 'medium', deadline: '', tags: [] };
-        if (input.toLowerCase().includes('khẩn cấp') || input.toLowerCase().includes('urgent') || input.toLowerCase().includes('cao')) { parsed.priority = 'high'; }
-        else if (input.toLowerCase().includes('trung bình') || input.toLowerCase().includes('medium')) { parsed.priority = 'medium'; }
-        else if (input.toLowerCase().includes('thấp') || input.toLowerCase().includes('low')) { parsed.priority = 'low'; }
-        const datePatterns = [ { pattern: /hôm nay|today/i, value: new Date().toISOString().split('T')[0] }, { pattern: /ngày mai|mai|tomorrow/i, value: new Date(Date.now() + 86400000).toISOString().split('T')[0] }, { pattern: /(\d{1,2})\/(\d{1,2})(?:\/(\d{4}|\d{2}))?/i, value: (match) => { return ''; } } ];
-         for (const { pattern, value } of datePatterns) { const match = input.match(pattern); if (match) { parsed.deadline = typeof value === 'function' ? value(match) : value; break; } }
-        const tagMatches = input.match(/#[\w\u00C0-\u024F\u1E00-\u1EFF]+/g); if (tagMatches) { parsed.tags = tagMatches.map(tag => tag.substring(1)); }
-        let cleanTitle = input; if (parsed.tags.length > 0) { parsed.tags.forEach(tag => { cleanTitle = cleanTitle.replace(`#${tag}`, ''); }); }
-        ['khẩn cấp', 'urgent', 'cao', 'trung bình', 'medium', 'thấp', 'low', 'hôm nay', 'ngày mai'].forEach(keyword => { cleanTitle = cleanTitle.replace(new RegExp(keyword, 'gi'), ''); });
-        parsed.title = cleanTitle.trim(); return parsed;
+        // Xử lý ưu tiên
+        if (/khẩn cấp|urgent|cao/i.test(input)) parsed.priority = 'high';
+        else if (/trung bình|medium/i.test(input)) parsed.priority = 'medium';
+        else if (/thấp|low/i.test(input)) parsed.priority = 'low';
+        
+        // Xử lý ngày
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        if (/hôm nay|today/i.test(input)) parsed.deadline = today;
+        else if (/ngày mai|mai|tomorrow/i.test(input)) parsed.deadline = tomorrow;
+        
+        // Xử lý tags #...
+        const tagMatches = input.match(/#[\w\u00C0-\u024F\u1E00-\u1EFF]+/g);
+        if (tagMatches) parsed.tags = tagMatches.map(tag => tag.substring(1));
+        
+        // Làm sạch tiêu đề (xóa các từ khóa đã parse)
+        let cleanTitle = input;
+        if (parsed.tags.length > 0) parsed.tags.forEach(tag => cleanTitle = cleanTitle.replace(`#${tag}`, ''));
+        ['khẩn cấp', 'urgent', 'cao', 'trung bình', 'medium', 'thấp', 'low', 'hôm nay', 'ngày mai'].forEach(k => {
+            cleanTitle = cleanTitle.replace(new RegExp(k, 'gi'), '');
+        });
+        parsed.title = cleanTitle.trim();
+        return parsed;
     };
 
-
-    // --- (HÀM DND) ---
+    // DnD Sensors
     const sensors = useSensors(
-        useSensor(PointerSensor),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), // Giúp click không bị nhầm là drag
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
-    // (findColumnContainingTask giữ nguyên)
-    function findColumnContainingTask(taskId) {
-        if (!taskId || !columns) return undefined;
-        return Object.keys(columns).find(columnId =>
-            columns[columnId] && columns[columnId].tasks.some(task => task.id === taskId)
-        );
-    }
-
-    // (handleDragStart giữ nguyên)
     function handleDragStart(event) {
         const { active } = event;
         const taskId = active.id;
@@ -260,168 +258,185 @@ const TaskBoard = () => {
         }
     }
 
-    // --- (SỬA LỖI) XÓA HÀM `handleDragOver` ---
-    // Chúng ta không cần optimistic updates ở đây, nó gây lỗi
-    // function handleDragOver(event) { ... }
-    // --- (KẾT THÚC SỬA LỖI) ---
-
-
-    // --- (SỬA LỖI) HÀM `handleDragEnd` được VIẾT LẠI ---
     async function handleDragEnd(event) {
         const { active, over } = event;
+        setActiveTask(null);
+        if (!over) return;
+
         const activeId = active.id;
-        const overId = over?.id;
-
-        setActiveTask(null); // Tắt overlay
-
-        if (!overId || !columns || activeId === overId) {
-            return; // Không có gì thay đổi
-        }
+        const overId = over.id;
+        
+        if (activeId === overId) return;
 
         const activeColumnId = active.data.current?.columnId;
-        
-        // Logic tìm overColumnId (giữ nguyên)
-        let overColumnId;
-        if (over.data.current?.type === 'column') {
-            overColumnId = over.id;
-        } else {
-            overColumnId = over.data.current?.columnId;
-        }
+        let overColumnId = over.data.current?.type === 'column' ? over.id : over.data.current?.columnId;
 
         if (!activeColumnId || !overColumnId) return;
-        
-        const DONE_STATUS_ID = 'done';
-        const userId = getUserId();
-        if (!userId) { alert("Lỗi User ID!"); return; }
 
-        // --- BẮT ĐẦU CẬP NHẬT STATE VÀ API ---
-        
-        // 1. Cập nhật UI (State)
-        const oldState = columns; // Lưu state cũ để rollback nếu lỗi
-        let newState = JSON.parse(JSON.stringify(columns)); // Tạo bản sao sâu
-        
-        let taskToMove;
-        let oldIndex;
-        let newIndex;
-
-        try {
-            if (activeColumnId === overColumnId) {
-                // TRƯỜNG HỢP 1: Kéo thả TRONG CÙNG 1 CỘT
-                const columnTasks = newState[activeColumnId].tasks;
-                oldIndex = columnTasks.findIndex(task => task.id === activeId);
-                newIndex = columnTasks.findIndex(task => task.id === overId);
-                
-                if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
-                    return; // Không thay đổi
-                }
-                
-                newState[activeColumnId].tasks = arrayMove(columnTasks, oldIndex, newIndex);
-                
-            } else {
-                // TRƯỜNG HỢP 2: Kéo thả SANG CỘT KHÁC
-                const activeItems = newState[activeColumnId].tasks;
-                const overItems = newState[overColumnId].tasks;
-                
-                oldIndex = activeItems.findIndex((task) => task.id === activeId);
-                if (oldIndex === -1) return;
-
-                // Lấy thẻ ra khỏi cột cũ
-                [taskToMove] = newState[activeColumnId].tasks.splice(oldIndex, 1);
-                
-                // Cập nhật status của thẻ (quan trọng)
-                taskToMove.status = overColumnId; 
-
-                // Tìm vị trí mới
-                newIndex = over.data.current?.type === 'column' 
-                    ? overItems.length // Thả vào cột rỗng
-                    : overItems.findIndex((task) => task.id === overId);
-                    
-                if (newIndex === -1) newIndex = overItems.length; // An toàn
-
-                // Thêm thẻ vào cột mới
-                newState[overColumnId].tasks.splice(newIndex, 0, taskToMove);
-                
-                // Cập nhật count
-                newState[activeColumnId].count = newState[activeColumnId].tasks.length;
-                newState[overColumnId].count = newState[overColumnId].tasks.length;
-            }
+        // Cập nhật UI (Optimistic Update)
+        setColumns(prev => {
+            const activeItems = prev[activeColumnId].tasks;
+            const overItems = prev[overColumnId].tasks;
             
-            // Cập nhật UI ngay lập tức
-            setColumns(newState);
+            const activeIndex = activeItems.findIndex(t => t.id === activeId);
+            let overIndex;
 
-            // 2. Gọi API để lưu
-            // (Chỉ gọi API nếu kéo sang cột khác, vì kéo cùng cột chỉ là sắp xếp)
-            if (activeColumnId !== overColumnId) {
-                const response = await fetch(`http://localhost:5000/api/tasks/${activeId}`, {
-                    method: 'PUT',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}` 
-                    },
-                    body: JSON.stringify({ 
-                        user_id: userId, 
-                        status: overColumnId // Task Status ID mới
-                    })
-                });
-
-                if (!response.ok) { 
-                    const errorData = await response.json(); 
-                    throw new Error(errorData.message || 'Lỗi server khi cập nhật trạng thái'); 
-                }
-                
-                // 3. Gọi API Thông báo (nếu cần)
-                if (overColumnId === DONE_STATUS_ID && activeColumnId !== DONE_STATUS_ID) {
-                    const notifResponse = await fetch(`http://localhost:5000/api/tasks/${activeId}/complete`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}` 
-                        }
-                    });
-                    if (!notifResponse.ok) {
-                         console.error("Lỗi khi gửi thông báo hoàn thành.");
-                    }
-                }
+            if (over.data.current?.type === 'column') {
+                overIndex = overItems.length + 1;
+            } else {
+                const isBelowOverItem = over && active.rect.current.translated && active.rect.current.translated.top > over.rect.top + over.rect.height;
+                const modifier = isBelowOverItem ? 1 : 0;
+                overIndex = overItems.findIndex(t => t.id === overId) + modifier;
             }
-            // (Bạn có thể thêm API để lưu vị trí (position) nếu kéo trong cùng 1 cột ở đây)
 
-        } catch (err) {
-            setError(`Lỗi cập nhật: ${err.message}`);
-            alert(`Lỗi cập nhật: ${err.message}`);
-            // Rollback UI (trả về state cũ)
-            setColumns(oldState); 
+            let newColumns;
+            if (activeColumnId === overColumnId) {
+                // Kéo thả trong cùng cột
+                newColumns = {
+                    ...prev,
+                    [activeColumnId]: {
+                        ...prev[activeColumnId],
+                        tasks: arrayMove(activeItems, activeIndex, overIndex)
+                    }
+                };
+            } else {
+                // Kéo thả sang cột khác
+                let newActiveItems = [...activeItems];
+                const [movedItem] = newActiveItems.splice(activeIndex, 1);
+                movedItem.status = overColumnId; // Cập nhật status mới
+
+                let newOverItems = [...overItems];
+                newOverItems.splice(overIndex, 0, movedItem);
+
+                newColumns = {
+                    ...prev,
+                    [activeColumnId]: { ...prev[activeColumnId], tasks: newActiveItems, count: newActiveItems.length },
+                    [overColumnId]: { ...prev[overColumnId], tasks: newOverItems, count: newOverItems.length }
+                };
+            }
+            return newColumns;
+        });
+
+        // Gọi API Cập nhật
+        if (activeColumnId !== overColumnId) {
+            try {
+                await fetch(`http://localhost:5000/api/tasks/${activeId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({ user_id: getUserId(), status: overColumnId })
+                });
+            } catch (err) {
+                console.error("Lỗi API move task:", err);
+                fetchTasks(); // Revert nếu lỗi
+            }
         }
     }
-    // --- (KẾT THÚC SỬA LỖI) ---
 
-
-    // (Các hàm CRUD: handleQuickCreate, handleCreateTask, handleEditTask, handleDeleteTask... đều được GIỮ NGUYÊN)
-    const handleQuickCreate = async () => { /* ... Giữ nguyên ... */
-        if (!naturalLanguageInput.trim()) return; const userId = getUserId(); if (!userId) { alert("..."); return; } const parsed = parseNaturalLanguage(naturalLanguageInput); const taskData = { creator_id: userId, title: parsed.title, priority: parsed.priority, deadline: parsed.deadline || null, status: selectedColumn }; setIsLoading(true); setError(null); try { const response = await fetch('http://localhost:5000/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskData) }); const createdTask = await response.json(); if (!response.ok) throw new Error(createdTask.message || 'Lỗi'); setColumns(prev => { const t = createdTask.status || selectedColumn; if (!prev[t]) return prev; const n = { ...createdTask }; const u = [n, ...(prev[t].tasks || [])]; return { ...prev, [t]: { ...prev[t], tasks: u, count: u.length } }; }); setNaturalLanguageInput(''); setShowCreateModal(false); } catch (err) { setError(`Lỗi: ${err.message}`); alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
+    // --- CÁC HÀM CRUD ---
+    const handleQuickCreate = async () => {
+        if (!naturalLanguageInput.trim()) return;
+        const userId = getUserId();
+        const parsed = parseNaturalLanguage(naturalLanguageInput);
+        const taskData = { creator_id: userId, title: parsed.title, priority: parsed.priority, deadline: parsed.deadline || null, status: selectedColumn };
+        
+        setIsLoading(true);
+        try {
+            const response = await fetch('http://localhost:5000/api/tasks', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskData)
+            });
+            const createdTask = await response.json();
+            
+            setColumns(prev => {
+                const t = createdTask.status || selectedColumn;
+                if (!prev[t]) return prev;
+                const u = [createdTask, ...(prev[t].tasks || [])];
+                return { ...prev, [t]: { ...prev[t], tasks: u, count: u.length } };
+            });
+            setNaturalLanguageInput('');
+            setShowCreateModal(false);
+        } catch (err) { alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
     };
-    const handleCreateTask = async () => { /* ... Giữ nguyên ... */
-        if (!newTask.title.trim()) return; const userId = getUserId(); if (!userId) { alert("..."); return; } const taskData = { creator_id: userId, title: newTask.title, description: newTask.description || null, priority: newTask.priority, deadline: newTask.deadline || null, status: selectedColumn }; setIsLoading(true); setError(null); try { const response = await fetch('http://localhost:5000/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskData) }); const createdTask = await response.json(); if (!response.ok) throw new Error(createdTask.message || 'Lỗi'); setColumns(prev => { const t = createdTask.status || selectedColumn; if (!prev[t]) return prev; const n = { ...createdTask }; const u = [n, ...(prev[t].tasks || [])]; return { ...prev, [t]: { ...prev[t], tasks: u, count: u.length } }; }); setNewTask({ title: '', description: '', priority: 'medium', deadline: '', tags: [] }); setCurrentTag(''); setShowCreateModal(false); } catch (err) { setError(`Lỗi: ${err.message}`); alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
-     };
-    const handleEditTask = async () => { /* ... Giữ nguyên ... */
-        if (!editingTask || !editingTask.title.trim()) return; const userId = getUserId(); if (!userId) { alert("..."); return; } const deadlineToSend = editingTask.deadline || null; const updateData = { user_id: userId, title: editingTask.title, description: editingTask.description || null, priority: editingTask.priority, deadline: deadlineToSend, status: editingTask.status }; setIsLoading(true); setError(null); try { const response = await fetch(`http://localhost:5000/api/tasks/${editingTask.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updateData) }); const updatedTask = await response.json(); if (!response.ok) throw new Error(updatedTask.message || 'Lỗi'); setColumns(prev => { const n = { ...prev }; let colChanged = false; let oldColId; for (const c in n) { const taskIndex = n[c].tasks.findIndex(t => t.id === updatedTask.id); if (taskIndex !== -1) { oldColId = c; if (c !== updatedTask.status) { colChanged = true; n[c].tasks.splice(taskIndex, 1); n[c].count = n[c].tasks.length; } else { n[c].tasks[taskIndex] = { ...updatedTask }; } break; } } if (colChanged && n[updatedTask.status]) { n[updatedTask.status].tasks.unshift({ ...updatedTask }); n[updatedTask.status].count = n[updatedTask.status].tasks.length; } return n; }); setShowEditModal(false); setEditingTask(null); setCurrentTag(''); } catch (err) { setError(`Lỗi: ${err.message}`); alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
-     };
-    const handleDeleteTask = async (taskId) => { /* ... Giữ nguyên ... */
-        if (!window.confirm("Bạn chắc chắn muốn xóa?")) return; const userId = getUserId(); if (!userId) { alert("..."); return; } setIsLoading(true); setError(null); try { const response = await fetch(`http://localhost:5000/api/tasks/${taskId}?userId=${userId}`, { method: 'DELETE' }); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Lỗi'); setColumns(prev => { const n = { ...prev }; for (const c in n) { const tasksBefore = n[c].tasks.length; n[c].tasks = n[c].tasks.filter(t => t.id !== taskId); if (tasksBefore > n[c].tasks.length) { n[c].count = n[c].tasks.length; } } return n; }); setShowEditModal(false); setEditingTask(null); } catch (err) { setError(`Lỗi: ${err.message}`); alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
-     };
-    const handleAddTag = (isEdit = false) => { /* ... giữ nguyên ... */ if (currentTag.trim()) { if (isEdit && editingTask) { setEditingTask({ ...editingTask, tags: [...(editingTask.tags || []), currentTag.trim()] }); } else { setNewTask({ ...newTask, tags: [...(newTask.tags || []), currentTag.trim()] }); } setCurrentTag(''); } };
-    const handleRemoveTag = (tagIndex, isEdit = false) => { /* ... giữ nguyên ... */ if (isEdit && editingTask) { setEditingTask({ ...editingTask, tags: (editingTask.tags || []).filter((_, i) => i !== tagIndex) }); } else { setNewTask({ ...newTask, tags: (newTask.tags || []).filter((_, i) => i !== tagIndex) }); } };
-    const openCreateModal = (columnId) => { /* ... giữ nguyên ... */ setSelectedColumn(columnId); setNewTask({ title: '', description: '', priority: 'medium', deadline: '', tags: [] }); setCurrentTag(''); setNaturalLanguageInput(''); setError(null); setShowCreateModal(true); };
-    
-    // (openEditModal giữ nguyên)
+
+    const handleCreateTask = async () => {
+        if (!newTask.title.trim()) return;
+        const userId = getUserId();
+        const taskData = { creator_id: userId, title: newTask.title, description: newTask.description || null, priority: newTask.priority, deadline: newTask.deadline || null, status: selectedColumn };
+        
+        setIsLoading(true);
+        try {
+            const response = await fetch('http://localhost:5000/api/tasks', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskData)
+            });
+            const createdTask = await response.json();
+            
+            setColumns(prev => {
+                const t = createdTask.status || selectedColumn;
+                if (!prev[t]) return prev;
+                const u = [createdTask, ...(prev[t].tasks || [])];
+                return { ...prev, [t]: { ...prev[t], tasks: u, count: u.length } };
+            });
+            setNewTask({ title: '', description: '', priority: 'medium', deadline: '', tags: [] });
+            setShowCreateModal(false);
+        } catch (err) { alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
+    };
+
+    const handleEditTask = async () => {
+        if (!editingTask || !editingTask.title.trim()) return;
+        const userId = getUserId();
+        const updateData = { user_id: userId, title: editingTask.title, description: editingTask.description || null, priority: editingTask.priority, deadline: editingTask.deadline || null, status: editingTask.status };
+        
+        setIsLoading(true);
+        try {
+            const response = await fetch(`http://localhost:5000/api/tasks/${editingTask.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updateData)
+            });
+            const updatedTask = await response.json();
+            
+            setColumns(prev => {
+                const n = { ...prev };
+                // Tìm và cập nhật task trong cột tương ứng
+                for (const c in n) {
+                    const taskIndex = n[c].tasks.findIndex(t => t.id === updatedTask.id);
+                    if (taskIndex !== -1) {
+                        n[c].tasks[taskIndex] = { ...updatedTask };
+                        break;
+                    }
+                }
+                return n;
+            });
+            setShowEditModal(false); setEditingTask(null);
+        } catch (err) { alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
+    };
+
+    const handleDeleteTask = async (taskId) => {
+        if (!window.confirm("Bạn chắc chắn muốn xóa?")) return;
+        const userId = getUserId();
+        setIsLoading(true);
+        try {
+            await fetch(`http://localhost:5000/api/tasks/${taskId}?userId=${userId}`, { method: 'DELETE' });
+            setColumns(prev => {
+                const n = { ...prev };
+                for (const c in n) {
+                    n[c].tasks = n[c].tasks.filter(t => t.id !== taskId);
+                    n[c].count = n[c].tasks.length;
+                }
+                return n;
+            });
+            setShowEditModal(false); setEditingTask(null);
+        } catch (err) { alert(`Lỗi: ${err.message}`); } finally { setIsLoading(false); }
+    };
+
+    const openCreateModal = (colId) => { setSelectedColumn(colId); setShowCreateModal(true); };
     const openEditModal = (task) => { 
         const deadlineForInput = task.deadline ? task.deadline.split('T')[0] : ''; 
-        setEditingTask({ ...task, tags: task.tags || [], deadline: deadlineForInput, priority: task.priority || task.flag || 'low' }); 
-        setCurrentTag(''); 
-        setError(null); 
+        setEditingTask({ ...task, deadline: deadlineForInput, priority: task.priority || 'low' }); 
         setShowEditModal(true); 
     };
 
-    // Lọc task và sắp xếp cột (Giữ nguyên)
+    // Filter tasks
     const columnsToRender = Object.values(columns)
         .sort((a, b) => {
              const order = { 'todo': 1, 'inprogress': 2, 'review': 3, 'done': 4 }; 
@@ -431,41 +446,34 @@ const TaskBoard = () => {
             ...col,
             tasks: (col.tasks || []).filter(task =>
                 !searchQuery ||
-                task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                (task.tags && task.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
+                task.title.toLowerCase().includes(searchQuery.toLowerCase())
             )
         }));
 
-
-    // --- RENDER ---
-    if (isLoading && Object.keys(columns).length === 0) { return <div>Đang tải...</div>; }
-    if (error && Object.keys(columns).length === 0) { return <div style={{ color: 'red', padding: '20px' }}>Lỗi: {error}</div>; }
+    if (isLoading && Object.keys(columns).length === 0) return <div>Đang tải công việc...</div>;
+    if (error && Object.keys(columns).length === 0) return <div style={{ color: 'red', padding: '20px' }}>Lỗi: {error}</div>;
 
     return (
         <DndContext
             sensors={sensors}
             collisionDetection={closestCorners}
             onDragStart={handleDragStart}
-            // --- (SỬA LỖI) Xóa onDragOver ---
-            // onDragOver={handleDragOver} 
             onDragEnd={handleDragEnd}
         >
             <div className="taskboard-wrapper">
-                {/* Header (Giữ nguyên) */}
+                {/* Header */}
                 <div className="taskboard-top-header">
                    <h1 className="taskboard-main-title">📋 Quản lý Công việc</h1>
-                   <div className="taskboard-search-bar"> <BsSearch className="search-icon" /> <input type="text" className="search-input" placeholder="Tìm kiếm..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /> </div>
+                   <div className="taskboard-search-bar"> 
+                       <BsSearch className="search-icon" /> 
+                       <input type="text" className="search-input" placeholder="Tìm kiếm..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /> 
+                   </div>
                 </div>
-                {error && <div style={{ color: 'red', marginBottom: '15px' }}>{error}</div>}
 
-                {/* Kanban Board (Giữ nguyên) */}
+                {/* Board */}
                 <div className="task-board">
                     {columnsToRender.map((column) => (
-                        <SortableContext
-                            key={column.id}
-                            items={column.tasks.map(task => task.id)}
-                            strategy={verticalListSortingStrategy}
-                        >
+                        <SortableContext key={column.id} items={column.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                             <TaskColumn 
                                 columnId={column.id}
                                 title={column.title}
@@ -478,20 +486,70 @@ const TaskBoard = () => {
                     ))}
                 </div>
 
-                {/* Overlay (Giữ nguyên) */}
                 <DragOverlay>
                     {activeTask ? (
-                         <TaskCard
-                            task={{ ...activeTask, date: activeTask.deadline ? new Date(activeTask.deadline).toLocaleDateString('en-GB', { day:'2-digit', month: 'short' }) : '' }}
-                            isOverlay={true} 
-                         />
+                         <TaskCard task={activeTask} isOverlay={true} />
                     ) : null}
                 </DragOverlay>
 
-                {/* Modals (Giữ nguyên) */}
-                {showCreateModal && (<div className="modal-overlay" onClick={() => setShowCreateModal(false)}> <div className="modal-content task-modal" onClick={(e) => e.stopPropagation()}> <div className="modal-header"> <h3 className="modal-title">Tạo CV mới</h3> <button className="close-modal-btn" onClick={() => setShowCreateModal(false)}> <IoClose /> </button> </div> <div className="modal-body"> {error && <p style={{color: 'red'}}>{error}</p>} <div className="natural-input-section"> <label className="form-label"><IoSparkles className="sparkle-icon" /> Nhập nhanh</label> <div className="natural-input-wrapper"> <input type="text" className="natural-input" placeholder='VD: "Báo cáo khẩn cấp hôm nay #Design"' value={naturalLanguageInput} onChange={(e) => setNaturalLanguageInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleQuickCreate()}/> <button className="quick-create-btn" onClick={handleQuickCreate} disabled={isLoading}> <IoSparkles /> {isLoading ? '...' : 'Tạo'} </button> </div> <p className="input-hint">💡 Gợi ý: "hôm nay/mai", "cao/tb/thấp", "#tag"</p> </div> <div className="divider"><span>Hoặc</span></div> <div className="form-group"> <label>Tiêu đề *</label> <input type="text" className="form-input" value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}/> </div> <div className="form-group"> <label>Mô tả</label> <textarea className="form-textarea" rows="3" value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}/> </div> <div className="form-row"> <div className="form-group"> <label>Ưu tiên</label> <select className="form-select" value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}> <option value="low">🟢 Thấp</option> <option value="medium">🟡 TB</option> <option value="high">🔴 Cao</option> </select> </div> <div className="form-group"> <label>Deadline</label> <input type="date" className="form-input" value={newTask.deadline} onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })}/> </div> </div> {/* Tags */} </div> <div className="modal-footer"> <button className="btn-cancel" onClick={() => setShowCreateModal(false)} disabled={isLoading}> Hủy </button> <button className="btn-create" onClick={handleCreateTask} disabled={!newTask.title.trim() || isLoading}> {isLoading ? '...' : 'Tạo'} </button> </div> </div> </div> )}
-                {showEditModal && editingTask && (<div className="modal-overlay" onClick={() => setShowEditModal(false)}> <div className="modal-content task-modal" onClick={(e) => e.stopPropagation()}> <div className="modal-header"> <h3 className="modal-title">Chỉnh sửa</h3> <div className="modal-header-actions"> <button className="delete-btn" onClick={() => handleDeleteTask(editingTask.id)} title="Xóa" disabled={isLoading}> 🗑️ </button> <button className="close-modal-btn" onClick={() => setShowEditModal(false)} disabled={isLoading}> <IoClose /> </button> </div> </div> <div className="modal-body"> {error && <p style={{color: 'red'}}>{error}</p>} <div className="form-group"> <label>Tiêu đề *</label> <input type="text" className="form-input" value={editingTask.title} onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}/> </div> <div className="form-group"> <label>Mô tả</label> <textarea className="form-textarea" rows="3" value={editingTask.description || ''} onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}/> </div> <div className="form-row"> <div className="form-group"> <label>Ưu tiên</label> <select className="form-select" value={editingTask.priority} onChange={(e) => setEditingTask({ ...editingTask, priority: e.target.value })}> <option value="low">🟢 Thấp</option> <option value="medium">🟡 TB</option> <option value="high">🔴 Cao</option> </select> </div> <div className="form-group"> <label>Deadline</label> <input type="date" className="form-input" value={editingTask.deadline || ''} onChange={(e) => setEditingTask({ ...editingTask, deadline: e.target.value })}/> </div> </div> {/* Tags */} </div> <div className="modal-footer"> <button className="btn-cancel" onClick={() => setShowEditModal(false)} disabled={isLoading}> Hủy </button> <button className="btn-save" onClick={handleEditTask} disabled={!editingTask.title.trim() || isLoading}> {isLoading ? '...' : 'Lưu'} </button> </div> </div> </div> )}
+                {/* --- MODAL CREATE --- */}
+                {showCreateModal && (
+                    <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+                        <div className="modal-content task-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h3 className="modal-title">Tạo CV mới</h3>
+                                <button className="close-modal-btn" onClick={() => setShowCreateModal(false)}> <IoClose /> </button>
+                            </div>
+                            <div className="modal-body">
+                                <div className="natural-input-section">
+                                    <label className="form-label"><IoSparkles className="sparkle-icon" /> Nhập nhanh</label>
+                                    <div className="natural-input-wrapper">
+                                        <input type="text" className="natural-input" placeholder='VD: "Báo cáo khẩn cấp hôm nay"' value={naturalLanguageInput} onChange={(e) => setNaturalLanguageInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleQuickCreate()}/>
+                                        <button className="quick-create-btn" onClick={handleQuickCreate} disabled={isLoading}> <IoSparkles /> Tạo </button>
+                                    </div>
+                                </div>
+                                <div className="divider"><span>Hoặc</span></div>
+                                <div className="form-group"> <label>Tiêu đề *</label> <input type="text" className="form-input" value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}/> </div>
+                                <div className="form-group"> <label>Mô tả</label> <textarea className="form-textarea" rows="3" value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}/> </div>
+                                <div className="form-row">
+                                    <div className="form-group"> <label>Ưu tiên</label> <select className="form-select" value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}> <option value="low">🟢 Thấp</option> <option value="medium">🟡 TB</option> <option value="high">🔴 Cao</option> </select> </div>
+                                    <div className="form-group"> <label>Deadline</label> <input type="date" className="form-input" value={newTask.deadline} onChange={(e) => setNewTask({ ...newTask, deadline: e.target.value })}/> </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button className="btn-cancel" onClick={() => setShowCreateModal(false)}> Hủy </button>
+                                <button className="btn-create" onClick={handleCreateTask} disabled={!newTask.title.trim() || isLoading}> Tạo </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
+                {/* --- MODAL EDIT --- */}
+                {showEditModal && editingTask && (
+                    <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+                        <div className="modal-content task-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h3 className="modal-title">Chỉnh sửa</h3>
+                                <div className="modal-header-actions">
+                                    <button className="delete-btn" onClick={() => handleDeleteTask(editingTask.id)} title="Xóa"> 🗑️ </button>
+                                    <button className="close-modal-btn" onClick={() => setShowEditModal(false)}> <IoClose /> </button>
+                                </div>
+                            </div>
+                            <div className="modal-body">
+                                <div className="form-group"> <label>Tiêu đề *</label> <input type="text" className="form-input" value={editingTask.title} onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}/> </div>
+                                <div className="form-group"> <label>Mô tả</label> <textarea className="form-textarea" rows="3" value={editingTask.description || ''} onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}/> </div>
+                                <div className="form-row">
+                                    <div className="form-group"> <label>Ưu tiên</label> <select className="form-select" value={editingTask.priority} onChange={(e) => setEditingTask({ ...editingTask, priority: e.target.value })}> <option value="low">🟢 Thấp</option> <option value="medium">🟡 TB</option> <option value="high">🔴 Cao</option> </select> </div>
+                                    <div className="form-group"> <label>Deadline</label> <input type="date" className="form-input" value={editingTask.deadline || ''} onChange={(e) => setEditingTask({ ...editingTask, deadline: e.target.value })}/> </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button className="btn-cancel" onClick={() => setShowEditModal(false)}> Hủy </button>
+                                <button className="btn-save" onClick={handleEditTask} disabled={!editingTask.title.trim() || isLoading}> Lưu </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </DndContext>
     );

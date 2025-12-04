@@ -1,285 +1,233 @@
-/* AI Assistant - Simple & Clean Design */
-
-.ai-assistant {
-  width: 100%;
-  height: 100%; /* Ensure it fills container */
-  padding: 20px;
-  background-color: var(--bg-color); /* Use main background */
-  transition: background-color 0.3s ease;
+/* --- 1. NÚT NỔI (FLOATING BUTTON) --- */
+.ai-floating-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 50%;
+  border: none;
+  box-shadow: 0 4px 15px rgba(118, 75, 162, 0.4);
+  cursor: pointer;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s;
+  animation: float 3s ease-in-out infinite;
 }
 
-.ai-container {
-  max-width: 900px;
-  /* Adjust height calculation if needed */
-  height: calc(100vh - 70px - 40px); /* Account for header and padding */
-  min-height: 500px; /* Minimum height */
-  margin: 0 auto;
-  background: var(--bg-secondary-color); /* Use secondary background */
+.ai-floating-btn:hover {
+  transform: scale(1.1);
+}
+
+.ai-floating-icon {
+  width: 35px; height: 35px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+  100% { transform: translateY(0px); }
+}
+
+/* --- 2. CỬA SỔ CHAT NỔI (WINDOW CONTAINER) --- */
+.ai-floating-window {
+  position: fixed;
+  bottom: 100px;
+  right: 30px;
+  width: 400px; /* Tăng độ rộng lên chút cho thoải mái */
+  height: 600px;
+  max-height: 80vh;
+  background: #ffffff;
   border-radius: 16px;
-  box-shadow: 0 2px 12px var(--shadow-color); /* Use shadow variable */
-  border: 1px solid var(--border-color); /* Add border */
+  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid #e5e7eb;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transform-origin: bottom right;
+  animation: popUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Header */
+@keyframes popUp {
+  from { opacity: 0; transform: scale(0) translate(50%, 50%); }
+  to { opacity: 1; transform: scale(1) translate(0, 0); }
+}
+
+/* --- 3. HEADER --- */
 .ai-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px; /* Slightly reduced padding */
-  /* Keep accent gradient */
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-  color: white; /* Keep white text */
-  flex-shrink: 0; /* Prevent header from shrinking */
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  flex-shrink: 0;
 }
 
 .ai-header-left {
+  display: flex; align-items: center; gap: 10px;
+}
+
+.ai-header-info h2 {
+  margin: 0; font-size: 16px; font-weight: 600;
+}
+.ai-header-info p {
+  margin: 0; font-size: 12px; opacity: 0.9;
+}
+
+.window-controls button {
+  background: none; border: none; color: white;
+  cursor: pointer; padding: 4px; margin-left: 5px;
+  font-size: 18px; opacity: 0.8; transition: 0.2s;
+}
+.window-controls button:hover { opacity: 1; }
+
+/* --- 4. KHUNG CHAT --- */
+.chat-area {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  background-color: #f3f4f6;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
 }
 
-/* AI Icon container in header */
-.ai-icon {
-  width: 48px; height: 48px;
-  display: flex; align-items: center; justify-content: center;
-  /* background: rgba(255, 255, 255, 0.15); */ /* Subtle background */
-  border-radius: 12px;
-  /* font-size: 24px; */ /* Font size set by image */
+.msg {
+  display: flex; gap: 8px; align-items: flex-end; max-width: 100%;
 }
-.ai-logo { /* The image itself */
-  width: 100%; /* Fill container */
-  height: 100%;
-  border-radius: 12px; /* Match container */
-  object-fit: cover;
-  /* box-shadow: 0 2px 5px rgba(0,0,0,0.2); */ /* Remove shadow maybe? */
-}
-
-
-.ai-header h2 {
-  margin: 0;
-  font-size: 18px; /* Slightly smaller */
-  font-weight: 700;
-}
-
-.ai-header p {
-  margin: 2px 0 0 0;
-  font-size: 13px;
-  opacity: 0.85; /* Slightly less opaque */
-}
-
-.ai-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px; /* Slightly smaller */
-  opacity: 0.9;
-}
-
-.status-dot {
-  width: 8px; height: 8px;
-  background: #10b981; /* Keep semantic green */
-  border-radius: 50%;
-  animation: pulseStatus 2s ease-in-out infinite; /* Renamed animation */
-}
-
-@keyframes pulseStatus { /* Renamed animation */
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } /* Add shadow pulse */
-  50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
-}
-
-/* Quick Actions */
-.quick-actions {
-  display: flex;
-  gap: 10px; /* Slightly increased gap */
-  padding: 12px 16px; /* Adjusted padding */
-  background: var(--bg-color); /* Use main background */
-  border-bottom: 1px solid var(--border-color); /* Use border variable */
-  overflow-x: auto; /* Keep horizontal scroll */
-  flex-shrink: 0; /* Prevent shrinking */
-  transition: background-color 0.3s ease, border-color 0.3s ease;
-}
-
-.quick-btn {
-  display: flex; align-items: center; gap: 6px; padding: 8px 14px; /* Adjusted padding */
-  background: var(--bg-secondary-color); /* Use secondary background */
-  border: 1px solid var(--border-color); /* Use border variable */
-  border-radius: 8px; font-size: 13px; /* Slightly smaller */
-  font-weight: 500; color: var(--text-secondary-color); /* Use secondary text color */
-  cursor: pointer; white-space: nowrap; transition: all 0.2s ease;
-}
-
-.quick-btn:hover {
-  background: var(--primary-color); /* Use primary color */
-  color: white; /* White text */
-  border-color: var(--primary-color);
-  transform: translateY(-1px);
-}
-
-.quick-btn span:first-child { font-size: 16px; }
-
-/* Chat Area */
-.chat-area {
-  flex: 1; /* Allow chat area to grow */
-  overflow-y: auto; /* Enable vertical scroll */
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  /* Improve scrollbar */
-  scrollbar-width: thin;
-  scrollbar-color: var(--text-secondary-color) transparent;
-}
-.chat-area::-webkit-scrollbar { width: 6px; }
-.chat-area::-webkit-scrollbar-track { background: transparent; }
-.chat-area::-webkit-scrollbar-thumb { background-color: var(--text-secondary-color); border-radius: 3px; }
-.chat-area::-webkit-scrollbar-thumb:hover { background-color: var(--text-color); }
-
-
-.msg { display: flex; gap: 12px; animation: fadeInMsg 0.3s ease; } /* Renamed animation */
-
-@keyframes fadeInMsg { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
 .msg.user { flex-direction: row-reverse; }
 
-.msg-avatar {
-  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-  border-radius: 10px; font-size: 18px; flex-shrink: 0;
-  /* Use gradient background */
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-  color: white; /* Icon color */
-}
-/* Avatar for AI */
-.avatar-img {
-    width: 100%; height: 100%;
-    border-radius: inherit; /* Match parent rounding */
-    object-fit: cover;
+.msg-avatar img {
+  width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: #ddd;
 }
 
-
-.msg.user .msg-avatar {
-  /* Use a different color/gradient for user avatar placeholder */
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%); /* Semantic green */
+.msg-body {
+  max-width: 80%;
+  display: flex; flex-direction: column;
 }
-
-.msg-body { flex: 1; max-width: 75%; }
-
-.msg.user .msg-body { display: flex; flex-direction: column; align-items: flex-end; }
+.msg.user .msg-body { align-items: flex-end; }
 
 .msg-bubble {
-  padding: 12px 16px;
-  background: var(--bg-color); /* Use main background for AI bubble */
-  border-radius: 12px;
-  border: 1px solid var(--border-color); /* Use border variable */
-  color: var(--text-color); /* Use text color */
-  transition: all 0.3s ease;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  position: relative;
+  word-wrap: break-word;
+}
+
+.msg.ai .msg-bubble {
+  background: white;
+  border-bottom-left-radius: 4px;
+  color: #1f2937;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .msg.user .msg-bubble {
-  /* Keep gradient for user bubble */
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-  color: white; /* White text */
-  border: none;
+  background: #667eea;
+  color: white;
+  border-bottom-right-radius: 4px;
 }
 
-.msg-bubble p { margin: 0; font-size: 15px; line-height: 1.5; white-space: pre-line; }
-
-/* Suggestions - Not used in provided JSX, but styled anyway */
-.suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.sug-btn {
-  padding: 6px 12px; background: var(--bg-secondary-color); /* Use secondary background */
-  border: 1px solid var(--border-color); /* Use border variable */
-  border-radius: 6px; font-size: 13px; color: var(--text-secondary-color); /* Use secondary text */
-  cursor: pointer; transition: all 0.2s ease;
+/* Sửa lỗi hiển thị Markdown List */
+.msg-bubble ul, .msg-bubble ol {
+  margin: 5px 0;
+  padding-left: 20px; /* Thụt đầu dòng để hiện dấu chấm */
 }
-.msg.user .sug-btn { /* Style for suggestions in user bubble */
-  background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.3); color: white;
+.msg-bubble li {
+  margin-bottom: 4px;
 }
-.sug-btn:hover {
-  background: var(--primary-color); color: white; border-color: var(--primary-color);
+.msg-bubble p {
+  margin: 0 0 5px 0;
+}
+.msg-bubble p:last-child {
+  margin-bottom: 0;
 }
 
-.msg-time {
-  display: block; margin-top: 4px; font-size: 11px;
-  color: var(--text-secondary-color); /* Use secondary text color */
-  transition: color 0.3s ease;
-}
-.msg.user .msg-time {
-    text-align: right; /* Align time right for user messages */
+/* Ảnh trong chat */
+.msg-image-preview {
+  display: block; width: auto; max-width: 100%;
+  max-height: 150px; border-radius: 8px; margin-bottom: 5px;
 }
 
-
-/* Typing indicator */
-.msg-bubble.typing { display: flex; gap: 4px; padding: 12px 16px; }
-.msg-bubble.typing span {
-  width: 8px; height: 8px;
-  background: var(--text-secondary-color); /* Use secondary text color */
-  border-radius: 50%; animation: typingAnim 1s ease-in-out infinite alternate; /* Renamed + alternate */
-}
-.msg-bubble.typing span:nth-child(2) { animation-delay: 0.15s; }
-.msg-bubble.typing span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes typingAnim { /* Renamed animation */
-  from { transform: translateY(0); opacity: 0.5; }
-  to { transform: translateY(-6px); opacity: 1; }
-}
-
-/* Chat Input */
+/* --- 5. VÙNG NHẬP LIỆU (Đã fix lỗi vỡ layout) --- */
 .chat-input-area {
-  display: flex; gap: 10px; /* Increased gap */ padding: 16px;
-  background: var(--bg-secondary-color); /* Use secondary background */
-  border-top: 1px solid var(--border-color); /* Use border variable */
-  flex-shrink: 0; /* Prevent input area from shrinking */
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  padding: 10px;
+  background: white;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 6px; /* Giảm khoảng cách các nút */
+  flex-shrink: 0;
 }
 
 .chat-input {
-  flex: 1; padding: 12px 16px;
-  border: 1px solid var(--border-color); /* Use border variable */
-  border-radius: 10px; font-size: 15px; font-family: inherit; outline: none;
-  background-color: var(--bg-color); /* Use main background */
-  color: var(--text-color); /* Use text color */
-  transition: all 0.2s ease;
+  flex: 1; /* Tự co giãn */
+  min-width: 0; /* QUAN TRỌNG: Để input có thể thu nhỏ khi cần */
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  background: #f9fafb;
 }
 .chat-input:focus {
-  border-color: var(--primary-color); /* Use primary color */
-  background-color: var(--bg-secondary-color); /* Use secondary on focus */
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+  border-color: #667eea; background: white;
 }
 
+/* Nút icon (File, Ảnh, Mic) */
+.action-btn {
+  background: #f3f4f6; 
+  border: none; color: #6b7280;
+  width: 36px; height: 36px; /* Kích thước cố định */
+  border-radius: 10px; /* Bo góc vuông nhẹ cho đẹp */
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; /* Không bị bóp méo */
+  transition: 0.2s;
+}
+.action-btn:hover {
+  background: #e5e7eb; color: #667eea;
+}
+
+/* Nút Gửi */
 .send-btn {
-  width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
-  /* Keep accent gradient */
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-  border: none; border-radius: 10px; color: white; /* White icon */
-  font-size: 20px; /* Slightly larger icon */
-  cursor: pointer; transition: all 0.2s ease;
+  background: #667eea; color: white;
+  border: none; 
+  width: 36px; height: 36px; 
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+.send-btn:hover { background: #5a67d8; }
+.send-btn:disabled { background: #d1d5db; cursor: default; }
+
+/* Preview ảnh trước khi gửi */
+.image-preview-container {
+  position: absolute; bottom: 70px; left: 15px;
+  background: white; padding: 5px; border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 10;
+}
+.image-preview-container img { height: 60px; border-radius: 4px; }
+.remove-img-btn {
+  position: absolute; top: -8px; right: -8px;
+  background: #ef4444; color: white; border-radius: 50%;
+  width: 20px; height: 20px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
 
-.send-btn:hover:not(:disabled) {
-  transform: translateY(-2px); opacity: 0.9;
-  box-shadow: 0 4px 12px var(--shadow-color); /* Use shadow variable */
-}
-
-.send-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
-
-
-/* Responsive */
-@media (max-width: 768px) {
-  .ai-assistant { padding: 0; }
-  .ai-container { height: 100vh; border-radius: 0; border: none; }
-  .ai-header { padding: 12px 16px; }
-  .ai-header h2 { font-size: 16px; }
-  .ai-header p { font-size: 12px; }
-  .ai-icon { width: 40px; height: 40px; } /* Smaller icon */
-  .chat-area { padding: 16px; }
-  .msg-body { max-width: 85%; }
-  .quick-actions { padding: 10px 12px; }
-  .quick-btn { padding: 8px 12px; font-size: 13px; }
-  .chat-input-area { padding: 12px; }
-  .chat-input { padding: 10px 14px; }
-  .send-btn { width: 44px; height: 44px; font-size: 18px; }
+/* Responsive Mobile */
+@media (max-width: 480px) {
+  .ai-floating-window {
+    right: 0; bottom: 0; width: 100%; height: 100%; border-radius: 0;
+  }
+  .ai-floating-btn { bottom: 20px; right: 20px; }
 }

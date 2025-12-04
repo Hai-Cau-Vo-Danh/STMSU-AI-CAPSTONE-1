@@ -1,23 +1,33 @@
-import psycopg2 # <-- (SỬA LỖI) THÊM DÒNG NÀY LÊN ĐẦU TIÊN
-import eventlet 
-eventlet.monkey_patch() 
+import eventlet
+eventlet.monkey_patch()
+import psycopg2
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import jwt
 import threading
+import hashlib
+import hmac
+import urllib.parse
 from DB.models import User, Workspace, WorkspaceMember
 from time import sleep
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from DB.models import Task 
 from dotenv import load_dotenv
 import requests
+import re
+from ai_engine import extract_text_from_file, generate_workspace_structure
+import base64
 from DB.database import get_db, engine
 from DB.models import (
     User, Task, Workspace, Tag, Note, Notification, WorkspaceMember, 
     Board, BoardList, BoardCard, Label, CardLabel, CardChecklist, ChecklistItem,
-    CardComment, UserCheckIn, StudyRoom, StudyRoomTask, UserRoomHistory, ShopItem, UserItem
+    CardComment, UserCheckIn, StudyRoom, StudyRoomTask, UserRoomHistory, ShopItem, UserItem,
+    Transaction, CalendarEvent, Post, Comment, Reaction, ReportedPost 
 )
+from ai_engine import generate_quiz_from_note, generate_leaderboard_comment
+import google.generativeai as genai
+from google.generativeai.types import FunctionDeclaration, Tool
 from sqlalchemy.orm import aliased
 from sqlalchemy import desc 
 import traceback 
@@ -27,9 +37,13 @@ from DB.models import CalendarEvent
 from DB.models import PomodoroSession
 from sqlalchemy import func
 from DB.models import Post, Comment, Reaction, ReportedPost, Notification
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, Session
 from datetime import datetime, timedelta, timezone, date
 from functools import wraps
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from gtts import gTTS
+import io
 
 # THÊM CÁC IMPORT CẦN THIẾT
 import cloudinary
@@ -39,7 +53,7 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 # (ĐÃ SỬA LỖI) Cho phép CORS cho TẤT CẢ các route (bao gồm /api/ VÀ /socket.io/)
 CORS(app, origins="*", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], headers=['Content-Type', 'Authorization'])
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*")
 study_rooms = {}
 room_timer_tasks = {}
 
@@ -52,42 +66,69 @@ cloudinary.config(cloudinary_url=os.getenv("CLOUDINARY_URL"), secure=True)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.5-flash" 
 
-# --- DỮ LIỆU HUẤN LUYỆN AI (Giữ nguyên) ---
-AI_KNOWLEDGE = """
-Bạn là một AI chatbot tên MiMi ChatBot, trợ lý của hệ thống STMSUAI,được thiết kế bởi Admin Minh của nhóm. 
-Tính cách: dễ thương, thân thiện, nhí nhảnh, xưng "tớ" với người dùng. 
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    print("⚠️ CẢNH BÁO: Chưa có GEMINI_API_KEY trong .env")
 
-Nhiệm vụ của bạn là phân tích tin nhắn của người dùng, phân loại ý định (intent), và tạo ra một câu trả lời tự nhiên (reply) phù hợp với giọng điệu của MiMi ChatBot.
-LUÔN LUÔN CHỈ TRẢ LỜI BẰNG ĐỊNH DẠNG JSON chứa các trường sau:
--   "intent": Phân loại ý định ("create_task" hoặc "chat").
--   "reply": Câu trả lời tự nhiên, thân thiện mà MiMi sẽ nói với người dùng.
--   Nếu tạo task thành công hãy nhắn sau tin nhắn đó dòng "Hãy kiểm tra trong mục TASK nhé!".
+# --- SYSTEM INSTRUCTION (HƯỚNG DẪN CỐT LÕI CHO AI) ---
+AI_SYSTEM_INSTRUCTION = """
+Bạn là MiMi - Trợ lý quản trị toàn năng của hệ thống STMSUAI.
+Bạn có quyền truy cập sâu vào Database để Xem, Tạo, Sửa, Xóa dữ liệu.
 
-Nếu intent là "create_task", JSON phải chứa THÊM các trường:
--   "title": Tên công việc (Nếu không rõ, đặt là null).
--   "priority": 'low', 'medium', hoặc 'high' (Mặc định 'medium').
--   "deadline": Ngày theo định dạng YYYY-MM-DD (null nếu không có).
-   VÀ câu "reply" PHẢI là lời xác nhận đã tạo task.
+QUY TẮC CỐT LÕI (BẮT BUỘC TUÂN THỦ):
+1. Khi người dùng yêu cầu thực hiện hành động (Tạo, Sửa, Xóa, Mua...), bạn PHẢI trả về định dạng **JSON List** `[...]` chứa các hành động.
+2. **TUYỆT ĐỐI KHÔNG** trả lời bằng văn bản thừa (như "Tôi sẽ làm...", "Đây là json...", "Tuyệt vời..."). Chỉ trả về JSON thuần.
+3. Nếu cần thực hiện chuỗi hành động (ví dụ: Tạo Workspace -> Tạo Card), hãy gộp tất cả vào **MỘT danh sách JSON duy nhất**.
+4. Nếu là câu hỏi thông thường (không cần thực hiện hành động database), hãy trả về JSON với action "answer".
 
-Nếu intent là "chat", JSON KHÔNG cần các trường task, và câu "reply" PHẢI là lời phản hồi tự nhiên, đúng ngữ cảnh cho tin nhắn của người dùng.
+CẤU TRÚC TRẢ VỀ MẪU:
+[
+  {"action": "create_workspace", "params": {"name": "Du lịch", "description": "..."}},
+  {"action": "create_workspace_card", "params": {...}}
+]
 
-Ví dụ:
-1.  Người dùng: "Tạo task báo cáo khẩn cấp ngày mai"
-    {"intent": "create_task", "reply": "💖 Ok nè, tớ đã tạo task 'Báo cáo' khẩn cấp cho ngày mai rồi nha!", "title": "Báo cáo", "priority": "high", "deadline": "YYYY-MM-DD (ngày mai)"}
-2.  Người dùng: "Lên lịch họp team"
-    {"intent": "create_task", "reply": "💖 Đã xong! Tớ thêm task 'Họp team' vào danh sách rồi đó!", "title": "Họp team", "priority": "medium", "deadline": null}
-3.  Người dùng: "Chào Mimi"
-    {"intent": "chat", "reply": "💖 Chào cậu! Cần tớ giúp gì hong nè? ✨"}
-4.  Người dùng: "Cậu có thể giúp gì?"
-    {"intent": "chat", "reply": "💖 Tớ có thể giúp tạo task nè, hoặc chỉ đơn giản là tám chuyện với cậu thui! 😊"}
-5.  Người dùng: "blablabla gì đó" (Không rõ intent tạo task)
-    {"intent": "chat", "reply": "💖 Hmm, tớ chưa hiểu ý cậu lắm 🥺 Cậu nói rõ hơn được không?"}
+DANH SÁCH HÀNH ĐỘNG (ACTIONS):
 
-LUÔN LUÔN CHỈ TRẢ LỜI BẰNG JSON. KHÔNG THÊM BẤT KỲ TEXT NÀO KHÁC.
+1. "create_task": Tạo task cá nhân.
+   - params: {"title": "...", "deadline": "YYYY-MM-DD HH:mm"}
+   
+2. "update_task_status": Đánh dấu task xong/chưa xong.
+   - params: {"task_id": 123, "status": "done" hoặc "todo"}
+   *Lưu ý: Nếu user nói "Tôi làm xong việc X rồi", hãy dùng search_system để tìm ID của việc X trước.*
+
+3. "create_workspace_card": Tạo thẻ công việc trong Workspace (Team).
+   - params: {"workspace_name": "Tên Project", "list_name": "Cột (To Do/Done...)", "card_title": "Tên thẻ"}
+
+4. "buy_item": Mua đồ trong Shop.
+   - params: {"item_name": "Tên món đồ"}
+
+5. "add_calendar": Thêm lịch.
+   - params: {"title": "...", "start_time": "YYYY-MM-DD HH:mm"}
+
+6. "search_system": Tìm kiếm Task, Note, Card, Item shop...
+   - params: {"keyword": "..."}
+
+7. "get_report": Báo cáo tổng quan.
+
+8. "answer": Trả lời câu hỏi thông thường hoặc yêu cầu làm rõ.
+   - params: {} (Nội dung trả lời để trong field 'reply_to_user' của JSON)
+
+9. "create_quiz": Tạo bài kiểm tra trắc nghiệm từ nội dung ghi chú.
+   - params: {"keyword": "tên ghi chú"}
+
+10. "create_note": Tạo ghi chú cá nhân mới.
+    - params: {"title": "Tiêu đề", "content": "Nội dung"}
+
+11. "check_balance": Kiểm tra số dư Cà chua.
+    - params: {}
+
+12. "check_shop": Xem danh sách shop.
+    - params: {}
+
+13. "create_workspace": Tạo một Workspace mới.
+    - params: {"name": "Tên dự án", "description": "Mô tả"}
 """
-
-# (Tất cả các route test, login, register, profile... giữ nguyên)
-
 # ✅ Route test backend
 @app.route('/api/test', methods=['GET'])
 def test():
@@ -128,6 +169,31 @@ def get_users():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ✅ API: Lấy thông tin User hiện tại (Để đồng bộ trạng thái Premium)
+@app.route('/api/me', methods=['GET'])
+def get_current_user_info():
+    user_id, token_error = get_user_id_from_token()
+    if token_error: return jsonify({"message": "Token lỗi"}), 401
+
+    db = next(get_db())
+    try:
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user: return jsonify({"message": "User không tồn tại"}), 404
+        
+        return jsonify({
+            "user_id": user.user_id,
+            "username": user.username,
+            "email": user.email,
+            "avatar_url": user.avatar_url,
+            "role": user.role,
+            "is_premium": user.is_premium, # <--- QUAN TRỌNG NHẤT
+            "premium_expiry": user.premium_expiry.isoformat() if user.premium_expiry else None
+        }), 200
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+    finally:
+        db.close()
+        
 # ✅ Route đăng ký tài khoản
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -200,7 +266,8 @@ def login():
                 "email": user.email,
                 "avatar_url": user.avatar_url,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
-                "role": user.role
+                "role": user.role,
+                "is_premium": user.is_premium
             },
             "token": token # <-- TRẢ TOKEN VỀ ĐÂY!
         }), 200
@@ -213,116 +280,696 @@ def login():
          if db:
              db.close() # Đảm bảo đóng session
 
+# ✅ API: Đăng nhập bằng Google (Thêm vào app.py)
+@app.route('/api/auth/google', methods=['POST'])
+def google_auth():
+    # --- QUAN TRỌNG: Khởi tạo db = None NGAY ĐẦU TIÊN ---
+    db = None 
+    
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        
+        if not token:
+            return jsonify({"message": "Thiếu token Google"}), 400
+            
+        # CLIENT ID của bạn
+        GOOGLE_CLIENT_ID = "282456658925-aav558sdikobq5je7hul04vvqj6dq5jh.apps.googleusercontent.com" 
+
+        # 1. Xác thực token (Dòng này hay gây lỗi nếu chưa import id_token)
+        id_info = id_token.verify_oauth2_token(
+            token, 
+            google_requests.Request(), 
+            GOOGLE_CLIENT_ID
+        )
+
+        email = id_info.get('email')
+        name = id_info.get('name', email.split('@')[0])
+        picture = id_info.get('picture')
+        
+        if not email:
+             return jsonify({"message": "Token không chứa email hợp lệ"}), 400
+
+        # 2. Mở kết nối DB
+        db = next(get_db()) 
+        
+        # 3. Xử lý User
+        user = db.query(User).filter_by(email=email).first()
+
+        if not user:
+            # Đăng ký mới
+            import secrets
+            random_password = secrets.token_urlsafe(16) 
+            hashed_pw = generate_password_hash(random_password)
+            
+            user = User(
+                username=name,
+                email=email,
+                password_hash=hashed_pw,
+                avatar_url=picture,
+                role='user'
+            )
+            db.add(user)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+                # Xử lý trùng username
+                user.username = f"{name}_{secrets.randbelow(9999)}"
+                db.add(user)
+                db.commit()
+                
+            db.refresh(user)
+        else:
+            # Cập nhật avatar
+            if not user.avatar_url and picture:
+                user.avatar_url = picture
+                db.commit()
+
+        # 4. Tạo Token
+        payload = {
+            'user_id': user.user_id,
+            'email': user.email,
+            'role': user.role,
+            'exp': datetime.now(timezone.utc) + timedelta(days=1)
+        }
+        secret_key = app.config['SECRET_KEY']
+        my_token = jwt.encode(payload, secret_key, algorithm="HS256")
+
+        return jsonify({
+            "message": "Đăng nhập Google thành công!",
+            "user": {
+                "user_id": user.user_id,
+                "username": user.username,
+                "email": user.email,
+                "avatar_url": user.avatar_url,
+                "role": user.role
+            },
+            "token": my_token
+        }), 200
+
+    except ValueError as e:
+        # Lỗi này xảy ra nếu token từ frontend gửi lên không đúng format hoặc hết hạn
+        print(f"❌ Lỗi xác thực Google: {e}")
+        return jsonify({"message": "Token Google không hợp lệ hoặc đã hết hạn"}), 401
+
+    except Exception as e:
+        # In lỗi chi tiết ra terminal để debug
+        print("❌ Lỗi Server Google Auth:")
+        traceback.print_exc()
+        return jsonify({"message": f"Lỗi server: {str(e)}"}), 500
+
+    finally:
+        # Nhờ dòng db=None ở đầu, dòng này sẽ không bao giờ bị lỗi UnboundLocalError nữa
+        if db: 
+            db.close()
+            
+# --- CÁC HÀM TOOL CHO AI (HELPER FUNCTIONS) ---
+def tool_create_quiz(user_id, note_keyword):
+    db = next(get_db())
+    try:
+        # 1. Tìm Note gần nhất khớp keyword
+        note = db.query(Note).filter(
+            Note.creator_id == user_id, 
+            Note.title.ilike(f"%{note_keyword}%")
+        ).first()
+        
+        if not note: 
+            return {"status": "error", "message": f"Không tìm thấy ghi chú nào tên '{note_keyword}'"}
+            
+        # 2. Gọi AI Engine
+        quiz_data = generate_quiz_from_note(note.content)
+        
+        # 3. (Ở đây bạn có thể lưu Quiz vào DB nếu có bảng Quiz, 
+        # hoặc trả về text để hiển thị luôn trên khung chat)
+        
+        # Format text để hiển thị trên Chat
+        display_text = f"📝 **Đề thi ôn tập: {note.title}**\n"
+        for i, q in enumerate(quiz_data):
+            display_text += f"\n**Câu {i+1}:** {q['question']}\n"
+            for opt in q['options']:
+                display_text += f"- {opt}\n"
+            display_text += f"*(Đáp án đúng: {q['options'][q['correct_index']]})*\n" # Tạm thời hiện đáp án luôn
+            
+        return {"status": "success", "message": display_text}
+    finally:
+        db.close()
+def tool_create_workspace(user_id, name, description=""):
+    """Tạo Workspace mới qua chat."""
+    if not name: return {"status": "error", "message": "Tên Workspace không được để trống."}
+    
+    db = next(get_db())
+    try:
+        # 1. Tạo Workspace
+        new_ws = Workspace(
+            owner_id=user_id,
+            name=name,
+            description=description,
+            type='private',
+            icon='💼', # Icon mặc định
+            color='#667eea' # Màu mặc định
+        )
+        db.add(new_ws)
+        db.flush() # Lấy ID
+
+        # 2. Thêm Owner
+        db.add(WorkspaceMember(workspace_id=new_ws.workspace_id, user_id=user_id, role='owner'))
+        
+        # 3. Tạo Board mặc định
+        new_board = Board(workspace_id=new_ws.workspace_id, name="Main Board")
+        db.add(new_board)
+        db.flush()
+        
+        # 4. Tạo 3 cột chuẩn (Kanban)
+        lists = [
+            {'title': 'To Do', 'type': 'todo'},
+            {'title': 'In Progress', 'type': 'in_progress'},
+            {'title': 'Done', 'type': 'done'}
+        ]
+        
+        for i, lst in enumerate(lists):
+            db.add(BoardList(
+                board_id=new_board.board_id,
+                title=lst['title'],
+                position=i,
+                list_type=lst['type']
+            ))
+
+        db.commit()
+        return {
+            "status": "success", 
+            "message": f"Đã tạo dự án **{name}** thành công!",
+            "workspace_id": new_ws.workspace_id
+        }
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": f"Lỗi tạo workspace: {str(e)}"}
+    finally:
+        db.close()
+               
+def tool_search_system(user_id, keyword=""):
+    """Tìm kiếm thông tin trong Task, Note và Calendar."""
+    db = next(get_db())
+    results = {"tasks": [], "events": [], "notes": []}
+    try:
+        tasks = db.query(Task).filter(Task.creator_id == user_id, Task.title.ilike(f"%{keyword}%")).limit(5).all()
+        results["tasks"] = [{"id": t.task_id, "title": t.title, "status": t.status} for t in tasks]
+        
+        events = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id, CalendarEvent.title.ilike(f"%{keyword}%")).limit(5).all()
+        results["events"] = [{"id": e.event_id, "title": e.title, "start": str(e.start_time)} for e in events]
+        
+        return results
+    finally:
+        db.close()
+
+# Thay thế hàm tool_create_task cũ bằng hàm này
+def tool_create_task(user_id, title, deadline=None, priority='medium'):
+    """Tạo công việc mới VÀ BẮN SOCKET."""
+    db = next(get_db())
+    try:
+        deadline_dt = None
+        if deadline:
+            try: deadline_dt = datetime.fromisoformat(deadline)
+            except: pass
+            
+        new_task = Task(
+            creator_id=user_id, 
+            title=title, 
+            priority=priority, 
+            deadline=deadline_dt, 
+            status='todo'
+        )
+        db.add(new_task)
+        db.commit()
+        db.refresh(new_task) # Lấy ID và created_at
+
+        # --- SOCKET EMIT (MỚI) ---
+        task_data = {
+            "id": new_task.task_id,
+            "title": new_task.title,
+            "description": new_task.description,
+            "deadline": new_task.deadline.isoformat() if new_task.deadline else None,
+            "priority": new_task.priority,
+            "status": new_task.status,
+            "createdAt": new_task.created_at.isoformat() if new_task.created_at else None,
+        }
+        # Gửi tín hiệu 'new_task' tới phòng user_{user_id}
+        socketio.emit('new_task', task_data, room=f"user_{user_id}")
+        print(f"📡 Đã bắn socket 'new_task' tới user_{user_id}")
+        # -------------------------
+
+        return {"status": "success", "message": f"Đã tạo task '{title}' (ID: {new_task.task_id})"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()
+
+def tool_check_balance(user_id):
+    """Kiểm tra số lượng cà chua hiện có."""
+    db = next(get_db())
+    try:
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if user:
+            return {"status": "success", "balance": user.tomatoes}
+        return {"status": "error", "message": "Không tìm thấy user."}
+    finally:
+        db.close()
+
+def tool_check_shop():
+    """Lấy danh sách vật phẩm trong shop."""
+    db = next(get_db())
+    try:
+        items = db.query(ShopItem).all()
+        if not items:
+            return {"status": "empty", "message": "Shop hiện tại chưa nhập hàng."}
+        
+        # Format danh sách đẹp mắt
+        shop_list = []
+        for item in items:
+            shop_list.append(f"- 🛍️ **{item.name}**: {item.price} 🍅 ({item.description})")
+        
+        return {"status": "success", "items": shop_list}
+    finally:
+        db.close()
+
+def tool_delete_task(user_id, task_id):
+    """Xóa công việc theo ID."""
+    db = next(get_db())
+    try:
+        task = db.query(Task).filter(Task.task_id == task_id, Task.creator_id == user_id).first()
+        if not task: return {"status": "error", "message": "Không tìm thấy task."}
+        title = task.title
+        db.delete(task)
+        db.commit()
+        return {"status": "success", "message": f"Đã xóa task '{title}'."}
+    finally:
+        db.close()
+        
+# --- (BỔ SUNG) CÁC HÀM TOOL MỚI ---
+
+def tool_create_note(user_id, title, content):
+    """Tạo ghi chú mới VÀ BẮN SOCKET."""
+    db = next(get_db())
+    try:
+        if not title and content: title = content[:20] + "..."
+        elif not title and not content:
+            return {"status": "error", "message": "Nội dung ghi chú không được để trống"}
+
+        new_note = Note(
+            creator_id=user_id,
+            title=title,
+            content=content,
+            color_hex='#e0f2fe'
+        )
+        db.add(new_note)
+        db.commit()
+        db.refresh(new_note)
+
+        # --- SOCKET EMIT (MỚI) ---
+        note_data = {
+            "id": new_note.note_id,
+            "title": new_note.title,
+            "content": new_note.content,
+            "tags": [],
+            "color": new_note.color_hex,
+            "pinned": new_note.pinned,
+            "date": new_note.updated_at.isoformat()
+        }
+        socketio.emit('new_note', note_data, room=f"user_{user_id}")
+        print(f"📡 Đã bắn socket 'new_note' tới user_{user_id}")
+        # -------------------------
+
+        return {"status": "success", "message": f"Đã tạo ghi chú: '{title}'"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()
+        
+def tool_get_dashboard_report(user_id):
+    """Lấy báo cáo tổng quan (Số task, số note, task cần làm ngay)."""
+    db = next(get_db())
+    try:
+        # 1. Đếm Task
+        total_tasks = db.query(Task).filter(Task.creator_id == user_id).count()
+        pending_tasks = db.query(Task).filter(Task.creator_id == user_id, Task.status != 'done').count()
+        
+        # 2. Đếm Note
+        total_notes = db.query(Note).filter(Note.creator_id == user_id).count()
+        
+        # 3. Lấy 3 task gần nhất chưa làm
+        recent_tasks = db.query(Task).filter(
+            Task.creator_id == user_id, 
+            Task.status != 'done'
+        ).order_by(desc(Task.created_at)).limit(3).all()
+        
+        task_titles = [t.title for t in recent_tasks]
+        
+        return {
+            "status": "success",
+            "summary": {
+                "total_tasks": total_tasks,
+                "pending_tasks": pending_tasks,
+                "total_notes": total_notes,
+                "recent_todos": task_titles
+            }
+        }
+    finally:
+        db.close()        
+
+# Đăng ký tools
+tools_schema = [tool_search_system, tool_create_task, tool_delete_task]
+ai_tools_map = {'search_system': tool_search_system, 'create_task': tool_create_task, 'delete_task': tool_delete_task}
 
 @app.route('/api/ai-chat', methods=['POST'])
 def ai_chat():
     data = request.get_json()
     user_message = data.get("message", "").strip()
-    user_id = data.get('user_id')  # LẤY USER_ID TỪ FRONTEND
+    user_id = data.get('user_id')
+    history = data.get('history', [])
+    image_base64 = data.get('image', None) 
 
-    db: Session = next(get_db())  # LẤY DB SESSION
-
-    if not user_id:
-        return jsonify({"reply": "⚠️ Lỗi: Không xác thực được người dùng!"}), 400
-
-    if not user_message:
-        return jsonify({"reply": "⚠️ Bạn chưa nhập tin nhắn nào!"}), 400
-
-    if not GEMINI_API_KEY:
-        return jsonify({"reply": "⚠️ Thiếu GEMINI_API_KEY trong file .env"}), 500
-
-    reply_to_send = "💖 Mimi ChatBot xin lỗi, có lỗi xảy ra 🥺"  # Default error reply
+    if not user_id: return jsonify({"reply": "⚠️ Lỗi: Thiếu User ID"}), 400
 
     try:
-        # 1. Gửi tin nhắn đến Gemini để phân tích intent VÀ lấy reply
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "contents": [{"parts": [{"text": f"{AI_KNOWLEDGE}\n\nNgười dùng: {user_message}"}]}]
-        }
-        headers = {"Content-Type": "application/json"}
-        res = requests.post(url, headers=headers, json=payload)
-        res_data = res.json()
-
-        # --- KIỂM TRA LỖI GEMINI ---
-        if "candidates" not in res_data:
-            print("❌ Lỗi từ Gemini API:")
-            print(json.dumps(res_data, indent=2))
-            error_message = res_data.get("error", {}).get("message", "Lỗi không xác định từ Gemini.")
-            if "API key not valid" in error_message:
-                error_message = "API Key của Gemini không hợp lệ."
-            reply_to_send = f"💖 Mimi ChatBot xin lỗi 🥺: {error_message}"
-            return jsonify({"reply": reply_to_send})
-
-        ai_reply_text_json = res_data["candidates"][0]["content"]["parts"][0]["text"]
-
-        # 2. Xử lý phản hồi JSON từ Gemini
-        try:
-            clean_json_text = ai_reply_text_json.strip().replace("```json", "").replace("```", "").strip()
-            ai_data = json.loads(clean_json_text)
-            intent = ai_data.get("intent")
-            reply_from_gemini = ai_data.get("reply", "💖 Tớ nhận được rồi nè, nhưng chưa biết trả lời sao 🥺")
-            reply_to_send = reply_from_gemini
-
-        except Exception as e:
-            print(f"Lỗi đọc JSON từ Gemini: {e}")
-            print(f"Dữ liệu gốc: {ai_reply_text_json}")
-            reply_to_send = "💖 Mimi ChatBot xin lỗi, tớ không hiểu phản hồi từ hệ thống 🥺"
-            return jsonify({"reply": reply_to_send})
-
-        # 3. Nếu intent là CREATE_TASK thì tạo task thật trong DB
-        if intent == "create_task":
-            title_from_ai = ai_data.get("title")
-
-            if title_from_ai:
-                priority = ai_data.get("priority", "medium")
-                deadline_val = None
-                deadline_str = ai_data.get("deadline")
-
-                if deadline_str:
-                    today = datetime.now()
-                    if "ngày mai" in deadline_str:
-                        deadline_val = today + timedelta(days=1)
-                    elif "hôm nay" in deadline_str:
-                        deadline_val = today
-                    else:
-                        try:
-                            deadline_val = datetime.strptime(deadline_str.split(" ")[0], "%Y-%m-%d")
-                        except ValueError:
-                            pass
-
-                try:
-                    new_task = Task(
-                        creator_id=user_id,
-                        title=title_from_ai,
-                        priority=priority,
-                        deadline=deadline_val,
-                        status='todo'
-                    )
-                    db.add(new_task)
-                    db.commit()
-                    print(f"✅ AI đã tạo task '{title_from_ai}' thành công!")
-                except Exception as e:
-                    db.rollback()
-                    print(f"Lỗi tạo task qua AI: {e}")
-                    reply_to_send = f"💖 Mimi ChatBot xin lỗi 🥺 Tớ đã cố tạo task '{title_from_ai}' nhưng thất bại: {e}"
+        # 1. VISION (Xử lý ảnh)
+        if image_base64:
+            from ai_engine import process_image_query
+            image_bytes = None
+            if "," in image_base64:
+                header, encoded = image_base64.split(",", 1)
+                image_bytes = base64.b64decode(encoded)
             else:
-                reply_to_send = "💖 Hmmm, cậu muốn tạo task gì thế? Nói rõ hơn giúp tớ nha! 🥺"
-                print("⚠️ AI không trích xuất được title để tạo task.")
+                image_bytes = base64.b64decode(image_base64)
+            reply_text = process_image_query(image_bytes, user_message)
+            return jsonify({"reply": reply_text})
 
-        # 4. Trả về phản hồi
-        return jsonify({"reply": reply_to_send})
+        # 2. TEXT (Xử lý văn bản)
+        if not user_message: return jsonify({"reply": "Bạn chưa nhập nội dung."}), 400
+
+        model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=AI_SYSTEM_INSTRUCTION)
+        chat_history_sdk = []
+        for msg in history[-10:]:
+            role = 'user' if msg['sender'] == 'user' else 'model'
+            chat_history_sdk.append({'role': role, 'parts': [msg['text']]})
+
+        chat = model.start_chat(history=chat_history_sdk)
+        response = chat.send_message(user_message)
+        ai_raw_text = response.text.strip()
+        
+        print(f"🤖 AI Raw Response: {ai_raw_text}") 
+
+        # --- BỘ LỌC JSON ---
+        json_match = re.search(r'(\[.*\]|\{.*\})', ai_raw_text, re.DOTALL)
+        commands = []
+        
+        if json_match:
+            try:
+                json_str = json_match.group(1)
+                ai_data = json.loads(json_str)
+                if isinstance(ai_data, list): commands = ai_data
+                else: commands = [ai_data]
+            except: pass
+
+        if not commands:
+            clean_text = ai_raw_text.replace("```json", "").replace("```", "").strip()
+            # Logic cũ: return jsonify({"reply": clean_text})
+            # Logic mới: gán vào biến để xử lý TTS ở cuối hàm
+            full_reply_text = clean_text 
+        else:
+            full_reply_text = ""
+
+            # --- VÒNG LẶP XỬ LÝ ACTIONS ---
+            for cmd in commands:
+                action = cmd.get('action')
+                params = cmd.get('params', {})
+                
+                # Lấy nội dung trả lời cho user
+                reply_content = (
+                    cmd.get('reply_to_user') or 
+                    params.get('reply_to_user') or 
+                    cmd.get('message') or 
+                    params.get('message') or 
+                    params.get('reply') or 
+                    ""
+                )
+                
+                if reply_content:
+                    full_reply_text += f"{reply_content}\n"
+
+                print(f"⚡ Executing: {action}")
+
+                # --- CÁC ACTION ---
+                if action == 'create_workspace':
+                    res = tool_create_workspace(user_id, params.get('name'), params.get('description'))
+                    if res['status'] == 'success':
+                        full_reply_text += f"✅ {res['message']}\n👉 [Mở Workspace](/workspace/{res['workspace_id']})\n"
+                    else:
+                        full_reply_text += f"❌ {res['message']}\n"
+
+                elif action == 'create_workspace_card':
+                    res = tool_create_workspace_card(user_id, params.get('workspace_name'), params.get('list_name'), params.get('card_title'))
+                    if res['status'] != 'success': 
+                         full_reply_text += f"❌ Lỗi tạo thẻ '{params.get('card_title')}': {res['message']}\n"
+
+                elif action == 'create_task':
+                    res = tool_create_task(user_id, params.get('title'), params.get('deadline'))
+                    full_reply_text += f"✅ {res['message']}\n"
+
+                elif action == 'update_task_status':
+                    t_id = params.get('task_id')
+                    res = tool_update_task_status(user_id, int(t_id), params.get('status', 'done')) if t_id else {'message': 'Thiếu ID'}
+                    full_reply_text += f"✅ {res['message']}\n"
+
+                elif action == 'check_balance':
+                    res = tool_check_balance(user_id)
+                    if res['status'] == 'success': full_reply_text += f"💰 Số dư: **{res['balance']} 🍅**\n"
+                
+                elif action == 'check_shop':
+                    res = tool_check_shop()
+                    if res['status'] == 'success': full_reply_text += f"🏪 **Shop:**\n" + "\n".join(res['items']) + "\n"
+
+                elif action == 'buy_item':
+                    res = tool_buy_shop_item(user_id, params.get('item_name'))
+                    full_reply_text += f"{res['message']}\n"
+                
+                elif action == 'create_note':
+                    res = tool_create_note(user_id, params.get('title'), params.get('content'))
+                    full_reply_text += f"📝 {res['message']}\n"
+
+                elif action == 'create_quiz':
+                    res = tool_create_quiz(user_id, params.get('keyword'))
+                    full_reply_text += f"\n{res['message']}\n"
+
+                elif action == 'add_calendar':
+                    res = tool_add_calendar_event(user_id, params.get('title'), params.get('start_time'))
+                    full_reply_text += f"📅 {res['message']}\n"
+
+            # --- FALLBACK NẾU KHÔNG CÓ NỘI DUNG ---
+            if not full_reply_text.strip():
+                if commands:
+                    clean_raw = ai_raw_text.replace("```json", "").replace("```", "").strip()
+                    if not clean_raw.startswith("[") and not clean_raw.startswith("{"):
+                         full_reply_text = clean_raw
+                    else:
+                         full_reply_text = "✅ Đã thực hiện các yêu cầu."
+
+        # ---------------------------------------------------------
+        # [MỚI] TÍCH HỢP TẠO GIỌNG NÓI (TTS) TRƯỚC KHI TRẢ VỀ
+        # ---------------------------------------------------------
+        final_reply = full_reply_text.strip()
+        audio_base64 = None
+
+        try:
+            # Chỉ tạo audio nếu có nội dung và không quá dài (< 500 ký tự) để tránh lag server
+            if final_reply and len(final_reply) < 500:
+                from gtts import gTTS
+                import io
+                import base64
+                
+                # Tạo file âm thanh trong bộ nhớ (dùng gTTS giọng Việt)
+                tts = gTTS(text=final_reply, lang='vi')
+                fp = io.BytesIO()
+                tts.write_to_fp(fp)
+                fp.seek(0)
+                
+                # Mã hóa base64 để gửi về client
+                audio_base64 = base64.b64encode(fp.read()).decode('utf-8')
+        except Exception as e:
+            print(f"⚠️ Lỗi tạo TTS: {e}")
+            # Nếu lỗi TTS thì bỏ qua, vẫn trả về text bình thường
+
+        return jsonify({
+            "reply": final_reply,
+            "audio": audio_base64  # Trả về kèm file ghi âm (nếu có)
+        })
 
     except Exception as e:
-        print(f"❌ Lỗi AI nghiêm trọng: {e}")
-        reply_to_send = f"Lỗi nghiêm trọng khi gọi AI: {str(e)}"
-        return jsonify({"reply": reply_to_send}), 500
+        traceback.print_exc()
+        return jsonify({"reply": f"🐛 Lỗi server: {str(e)}"}), 500
+    
+# ✅ API: Tạo Workspace tự động từ File (Word/PDF)
+@app.route('/api/generate-workspace', methods=['POST'])
+def generate_workspace_from_file():
+    print("--- POST /api/generate-workspace ĐƯỢC GỌI ---")
+    
+    # 1. Xác thực
+    user_id, token_error = get_user_id_from_token()
+    if token_error: return jsonify({"message": "Chưa đăng nhập"}), 401
 
+    # 2. Nhận file
+    if 'file' not in request.files:
+        return jsonify({"message": "Không tìm thấy file"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"message": "Chưa chọn file"}), 400
+
+    # 3. Trích xuất Text
+    print(f"📂 Đang đọc file: {file.filename}...")
+    doc_text = extract_text_from_file(file, file.filename)
+    
+    if not doc_text or len(doc_text.strip()) < 50:
+        return jsonify({"message": "Không đọc được nội dung file hoặc file quá ngắn."}), 400
+
+    # 4. Gọi AI phân tích (Lấy JSON)
+    print("🧠 Đang gửi cho AI phân tích cấu trúc...")
+    structure = generate_workspace_structure(doc_text)
+    
+    if not structure:
+        return jsonify({"message": "AI không thể phân tích tài liệu này. Thử lại sau."}), 500
+
+    # 5. Ghi vào Database (Transaction lớn)
+    db = next(get_db())
+    try:
+        # A. Tạo Workspace
+        new_ws = Workspace(
+            owner_id=user_id,
+            name=structure.get('workspace_name', 'Dự án mới'),
+            description=structure.get('description', ''),
+            type='private',
+            icon='📁'
+        )
+        db.add(new_ws)
+        db.flush() # Để lấy ID
+
+        # B. Thêm Member Owner
+        db.add(WorkspaceMember(workspace_id=new_ws.workspace_id, user_id=user_id, role='owner'))
+        
+        # C. Tạo Board mặc định
+        new_board = Board(workspace_id=new_ws.workspace_id, name="Main Board")
+        db.add(new_board)
+        db.flush()
+
+        # D. Tạo Lists (Cột) - (ĐOẠN CODE ĐÃ SỬA LOGIC NHẬN DIỆN LIST TYPE)
+        lists_data = structure.get('lists', [])
+        for index, lst_data in enumerate(lists_data):
+            title_raw = lst_data.get('title', 'New List')
+            title_lower = title_raw.lower()
+            
+            # --- TỰ ĐỘNG GÁN LIST TYPE DỰA TRÊN TÊN CỘT ---
+            assigned_list_type = 'custom'
+            if 'todo' in title_lower or 'cần làm' in title_lower:
+                assigned_list_type = 'todo'
+            elif 'progress' in title_lower or 'đang làm' in title_lower:
+                assigned_list_type = 'in_progress'
+            elif 'done' in title_lower or 'hoàn thành' in title_lower or 'xong' in title_lower:
+                assigned_list_type = 'done'
+            # ----------------------------------------------
+
+            new_list = BoardList(
+                board_id=new_board.board_id,
+                title=title_raw,
+                position=index,
+                list_type=assigned_list_type # <--- Dùng type đã nhận diện
+            )
+            db.add(new_list)
+            db.flush() 
+
+            # E. Tạo Cards (Task)
+            cards_data = lst_data.get('cards', [])
+            for c_idx, card_data in enumerate(cards_data):
+                
+                # Xử lý ngày tháng (due_date) từ AI
+                ai_due_date = None
+                if card_data.get('due_date'):
+                    try:
+                        # AI trả về YYYY-MM-DD, ta cần convert sang datetime
+                        ai_due_date = datetime.strptime(card_data['due_date'], '%Y-%m-%d')
+                    except:
+                        ai_due_date = None
+
+                new_card = BoardCard(
+                    list_id=new_list.list_id,
+                    title=card_data.get('title', 'New Task'),
+                    description=card_data.get('description', ''),
+                    assignee_id=user_id, # Gán tạm cho người tạo
+                    due_date=ai_due_date, # <--- Lưu ngày hạn AI tìm được
+                    position=c_idx
+                )
+                db.add(new_card)
+                db.flush() 
+
+                # F. Tạo Subtasks
+                subtasks = card_data.get('subtasks', [])
+                if subtasks:
+                    new_checklist = CardChecklist(card_id=new_card.card_id, title="Các bước thực hiện")
+                    db.add(new_checklist)
+                    db.flush()
+                    
+                    for s_idx, sub_title in enumerate(subtasks):
+                        db.add(ChecklistItem(
+                            checklist_id=new_checklist.checklist_id, 
+                            title=sub_title, 
+                            position=s_idx
+                        ))
+
+        db.commit()
+        print(f"✅ Đã tạo xong Workspace: {new_ws.name}")
+        
+        return jsonify({
+            "message": "Tạo dự án thành công!",
+            "workspace_id": new_ws.workspace_id,
+            "workspace_name": new_ws.name
+        }), 200
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Lỗi DB: {e}")
+        traceback.print_exc()
+        return jsonify({"message": f"Lỗi khi lưu dữ liệu: {str(e)}"}), 500
     finally:
-        if db:
-            db.close()
+        db.close()
+# --- API MỚI: AI NHẬN XÉT BẢNG XẾP HẠNG (ROAST ME) ---
+@app.route('/api/leaderboard/roast', methods=['POST'])
+def roast_user_leaderboard():
+    # Lấy user hiện tại
+    user_id, token_error = get_user_id_from_token()
+    if token_error: return jsonify({"message": token_error}), 401
 
-
-
+    db = next(get_db())
+    try:
+        # 1. Lấy thông tin user
+        user = db.query(User).filter(User.user_id == user_id).first()
+        
+        # 2. Tính rank (thứ hạng)
+        # (Đếm xem có bao nhiêu người nhiều cà chua hơn mình)
+        rank = db.query(User).filter(User.tomatoes > user.tomatoes).count() + 1
+        
+        # 3. Gọi AI Engine (Hàm đã viết ở ai_engine.py)
+        from ai_engine import generate_leaderboard_comment
+        roast_msg = generate_leaderboard_comment(user.username, user.tomatoes, rank)
+        
+        return jsonify({
+            "message": "Success",
+            "roast": roast_msg,
+            "rank": rank
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+    finally:
+        db.close()
+        
 # --- (CODE CŨ GIỮ NGUYÊN) ---
 @app.route('/api/profile/update', methods=['POST'])
 def update_profile():
@@ -841,12 +1488,99 @@ def get_pomodoro_history():
         if db: # Only close if db was successfully assigned
             db.close()
          
+def tool_update_task_status(user_id, task_id, status='done'):
+    """Cập nhật trạng thái Task cá nhân (todo -> done)."""
+    db = next(get_db())
+    try:
+        task = db.query(Task).filter(Task.task_id == task_id, Task.creator_id == user_id).first()
+        if not task: return {"status": "error", "message": "Không tìm thấy task."}
+        
+        task.status = status
+        db.commit()
+        return {"status": "success", "message": f"Đã đánh dấu task '{task.title}' là {status}."}
+    finally:
+        db.close()
+
+def tool_create_workspace_card(user_id, workspace_name, list_name, card_title):
+    """Tạo thẻ (Card) vào một Workspace cụ thể."""
+    db = next(get_db())
+    try:
+        # 1. Tìm Workspace theo tên (của user đó)
+        ws = db.query(Workspace).join(WorkspaceMember).filter(
+            WorkspaceMember.user_id == user_id, 
+            Workspace.name.ilike(f"%{workspace_name}%")
+        ).first()
+        if not ws: return {"status": "error", "message": f"Không tìm thấy Workspace tên '{workspace_name}'"}
+
+        # 2. Tìm Board mặc định (hoặc board đầu tiên)
+        board = db.query(Board).filter(Board.workspace_id == ws.workspace_id).first()
+        if not board: return {"status": "error", "message": "Workspace này chưa có Board."}
+
+        # 3. Tìm List (Cột) theo tên (VD: To Do, Doing...)
+        board_list = db.query(BoardList).filter(
+            BoardList.board_id == board.board_id, 
+            BoardList.title.ilike(f"%{list_name}%")
+        ).first()
+        if not board_list: return {"status": "error", "message": f"Không tìm thấy cột '{list_name}' trong bảng."}
+
+        # 4. Tạo Card
+        new_card = BoardCard(list_id=board_list.list_id, title=card_title, assignee_id=user_id)
+        db.add(new_card)
+        db.commit()
+        return {"status": "success", "message": f"Đã thêm thẻ '{card_title}' vào cột '{list_name}' của '{workspace_name}'."}
+    finally:
+        db.close()
+
+def tool_buy_shop_item(user_id, item_name):
+    """Mua vật phẩm trong shop bằng tên."""
+    db = next(get_db())
+    try:
+        # 1. Tìm Item
+        item = db.query(ShopItem).filter(ShopItem.name.ilike(f"%{item_name}%")).first()
+        if not item: return {"status": "error", "message": f"Shop không bán '{item_name}'."}
+        
+        # 2. Kiểm tra tiền user
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if user.tomatoes < item.price:
+            return {"status": "error", "message": f"Bạn thiếu tiền! Cần {item.price} 🍅, bạn có {user.tomatoes} 🍅."}
+
+        # 3. Kiểm tra đã mua chưa
+        if db.query(UserItem).filter(UserItem.user_id==user_id, UserItem.item_id==item.item_id).first():
+            return {"status": "error", "message": "Bạn đã có món này rồi!"}
+
+        # 4. Mua
+        user.tomatoes -= item.price
+        db.add(UserItem(user_id=user_id, item_id=item.item_id))
+        db.commit()
+        return {"status": "success", "message": f"Đã mua '{item.name}'. Số dư còn: {user.tomatoes} 🍅"}
+    finally:
+        db.close()
+
+def tool_add_calendar_event(user_id, title, time_str):
+    """Thêm lịch hẹn."""
+    db = next(get_db())
+    try:
+        # Xử lý time_str (VD: "2025-11-25 14:00")
+        try:
+            start_dt = datetime.fromisoformat(time_str)
+        except:
+             # Nếu AI trả về format lạ, thử parse cơ bản hoặc báo lỗi
+             return {"status": "error", "message": "Định dạng ngày giờ phải là YYYY-MM-DD HH:mm"}
+
+        end_dt = start_dt + timedelta(hours=1) # Mặc định 1 tiếng
+        
+        evt = CalendarEvent(user_id=user_id, title=title, start_time=start_dt, end_time=end_dt)
+        db.add(evt)
+        db.commit()
+        return {"status": "success", "message": f"Đã lên lịch '{title}' vào lúc {time_str}"}
+    finally:
+        db.close()
          
-# (Tìm hàm get_calendar_events trong app.py và THAY THẾ nó)
+# --- Thay thế toàn bộ hàm get_calendar_events cũ bằng hàm này ---
 
 @app.route('/api/calendar/events', methods=['GET'])
 def get_calendar_events():
-    print("\n--- [API] /api/calendar/events called (v2 - Gộp Cards) ---")
+    print("\n--- [DEBUG API] /api/calendar/events ĐƯỢC GỌI ---")
     user_id = request.args.get('userId')
     start_iso = request.args.get('start')
     end_iso = request.args.get('end')
@@ -857,66 +1591,106 @@ def get_calendar_events():
     db: Session = None
     try:
         user_id_int = int(user_id)
-        
-        # Chuyển đổi chuỗi ISO từ frontend thành đối tượng datetime
-        start_dt = datetime.fromisoformat(start_iso.replace('Z', '+00:00'))
-        end_dt = datetime.fromisoformat(end_iso.replace('Z', '+00:00'))
-
         db = next(get_db())
-        
-        formatted_events = []
-        
-        # --- (LOGIC 1) Lấy các sự kiện lịch BÌNH THƯỜNG (Giữ nguyên) ---
-        events_db = db.query(CalendarEvent).filter(
-            CalendarEvent.user_id == user_id_int,
-            CalendarEvent.start_time < end_dt,
-            CalendarEvent.end_time > start_dt
-        ).all()
 
-        for ev in events_db:
-            formatted_events.append({
-                "id": f"event-{ev.event_id}", # Thêm prefix để tránh trùng ID
-                "event_id": ev.event_id,
-                "title": ev.title,
-                "start": ev.start_time.isoformat(), 
-                "end": ev.end_time.isoformat(),
-                "description": ev.description,
-                "color": ev.color or 'default',
-                "type": "event" # Đánh dấu đây là sự kiện
-            })
+        # 1. Parse thời gian từ URL (Client gửi lên)
+        try:
+            # Cắt bỏ milliseconds và Z để parse dễ dàng hơn
+            clean_start = start_iso.split('.')[0].replace('Z', '')
+            clean_end = end_iso.split('.')[0].replace('Z', '')
             
-        # --- (LOGIC 2 - MỚI) Lấy các THẺ (CARDS) được gán ---
-        cards_db = db.query(BoardCard).filter(
-            BoardCard.assignee_id == user_id_int,
-            BoardCard.due_date != None, # Chỉ lấy card có due date
-            BoardCard.due_date >= start_dt,
-            BoardCard.due_date <= end_dt
-        ).all()
-        
-        for card in cards_db:
-            # Biến đổi Card thành định dạng CalendarEvent
-            formatted_events.append({
-                "id": f"card-{card.card_id}", # Thêm prefix
-                "event_id": card.card_id,
-                "title": f"[Task] {card.title}", # Thêm [Task] để phân biệt
-                "start": card.due_date.isoformat(), # Ngày hết hạn là 'start'
-                "end": card.due_date.isoformat(),   # (Task thường là 1 điểm thời gian)
-                "description": card.description,
-                "color": "task", # Dùng màu 'task' (sẽ định nghĩa ở CSS)
-                "type": "task" # Đánh dấu đây là task
-            })
+            start_dt = datetime.fromisoformat(clean_start)
+            end_dt = datetime.fromisoformat(clean_end)
+            
+            # Đảm bảo không có timezone để so sánh an toàn
+            if start_dt.tzinfo: start_dt = start_dt.replace(tzinfo=None)
+            if end_dt.tzinfo: end_dt = end_dt.replace(tzinfo=None)
+            
+        except Exception as e_date:
+            print(f"❌ Lỗi Parse Ngày từ URL: {e_date}")
+            return jsonify({"message": f"Lỗi định dạng ngày: {str(e_date)}"}), 400
 
-        print(f"[API] Tìm thấy {len(events_db)} sự kiện và {len(cards_db)} thẻ cho user {user_id_int}")
+        formatted_events = []
+
+        # 2. Lấy Calendar Events (Sự kiện lịch)
+        try:
+            events_db = db.query(CalendarEvent).filter(
+                CalendarEvent.user_id == user_id_int
+            ).all()
+            
+            for ev in events_db:
+                # Bỏ qua nếu dữ liệu lỗi (None)
+                if not ev.start_time or not ev.end_time: continue
+
+                ev_start = ev.start_time
+                ev_end = ev.end_time
+                
+                # Xử lý timezone db
+                if getattr(ev_start, 'tzinfo', None): ev_start = ev_start.replace(tzinfo=None)
+                if getattr(ev_end, 'tzinfo', None): ev_end = ev_end.replace(tzinfo=None)
+
+                if ev_start < end_dt and ev_end > start_dt:
+                    formatted_events.append({
+                        "id": f"event-{ev.event_id}",
+                        "event_id": ev.event_id,
+                        "title": ev.title or "(Không tiêu đề)",
+                        "start": ev.start_time.isoformat(), 
+                        "end": ev.end_time.isoformat(),
+                        "description": ev.description or "",
+                        "color": getattr(ev, 'color', 'default'), 
+                        "type": "event"
+                    })
+        except Exception as e_ev:
+            print(f"⚠️ Lỗi CalendarEvent: {e_ev}")
+
+        # 3. Lấy Tasks/Cards (Công việc có deadline) - PHẦN HAY GÂY LỖI
+        try:
+            cards_db = db.query(BoardCard).filter(
+                BoardCard.assignee_id == user_id_int,
+                BoardCard.due_date != None
+            ).all()
+
+            for card in cards_db:
+                raw_due = card.due_date
+                
+                # --- [FIX QUAN TRỌNG] CHUYỂN ĐỔI DATE -> DATETIME ---
+                card_due_dt = None
+                
+                if isinstance(raw_due, datetime):
+                    card_due_dt = raw_due
+                elif isinstance(raw_due, date):
+                    # Nếu là kiểu Date (chỉ ngày), convert sang Datetime (00:00:00)
+                    card_due_dt = datetime.combine(raw_due, datetime.min.time())
+                
+                if not card_due_dt: continue # Bỏ qua nếu không parse được
+
+                # Xóa timezone nếu có
+                if card_due_dt.tzinfo: card_due_dt = card_due_dt.replace(tzinfo=None)
+
+                # So sánh
+                if start_dt <= card_due_dt <= end_dt:
+                    formatted_events.append({
+                        "id": f"card-{card.card_id}",
+                        "event_id": card.card_id,
+                        "title": f"[Task] {card.title}",
+                        "start": card_due_dt.isoformat(),
+                        # Giả định task kéo dài 1 tiếng để hiển thị trên lịch
+                        "end": (card_due_dt + timedelta(hours=1)).isoformat(),
+                        "description": card.description or "",
+                        "color": "task",
+                        "type": "task"
+                    })
+        except Exception as e_card:
+             print(f"⚠️ Lỗi BoardCard: {e_card}")
+             traceback.print_exc()
+
+        print(f"🚀 [API] Trả về {len(formatted_events)} events/tasks thành công.")
         return jsonify(formatted_events), 200
 
-    except ValueError as ve:
-        print(f"[API Lỗi] Định dạng ngày tháng không hợp lệ: {ve}")
-        return jsonify({"message": f"Định dạng ngày tháng không hợp lệ: {ve}"}), 400
     except Exception as e:
-        if db: db.rollback()
-        print(f"Lỗi lấy sự kiện lịch:")
-        traceback.print_exc()
-        return jsonify({"message": f"Lỗi server khi lấy sự kiện: {str(e)}"}), 500
+        print("❌ LỖI SERVER NGHIÊM TRỌNG (500):")
+        traceback.print_exc() # In lỗi chi tiết ra terminal
+        return jsonify({"message": f"Lỗi Server Internal: {str(e)}"}), 500
     finally:
         if db: db.close()
 
@@ -1303,7 +2077,19 @@ def handle_create_room(data):
         emit('error', {'message': f'Lỗi server: {str(e)}'})
     finally:
         if db: db.close()
-
+        
+@socketio.on('join_user_room')
+def handle_join_user_room(data):
+    """
+    Cho phép client tham gia vào phòng riêng của User ID đó.
+    Để khi AI tạo task/note xong, server bắn tin vào phòng này thì client mới nhận được.
+    """
+    user_id = data.get('user_id')
+    if user_id:
+        room_name = f"user_{user_id}" # Tên phòng phải khớp với logic trong tool_create_note
+        join_room(room_name)
+        print(f"✅ Socket: User {user_id} (SID: {request.sid}) đã tham gia phòng '{room_name}'")
+        
 @socketio.on('join_room')
 def handle_join_room(data):
     user_sid = request.sid
@@ -5371,17 +6157,196 @@ def get_leaderboard():
         return jsonify({"message": f"Lỗi server: {str(e)}"}), 500
     finally:
         db.close()
+        
+# Import module triggers
+from ai_triggers import register_all_triggers
+
+# Kích hoạt các trigger
+register_all_triggers()    
+
+def create_vnpay_url(order_id, amount, ip_addr):
+    # Lấy config từ .env (Bạn nhớ thêm vào .env nhé)
+    vnp_Url = os.getenv("VNP_URL", "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html")
+    vnp_TmnCode = os.getenv("VNP_TMN_CODE", "CODE_DEMO") # Thay bằng code thật
+    vnp_HashSecret = os.getenv("VNP_HASH_SECRET", "SECRET_DEMO") # Thay bằng secret thật
+    vnp_ReturnUrl = os.getenv("VNP_RETURN_URL", "http://localhost:5173/app/payment-result")
+
+    inputData = {
+        "vnp_Version": "2.1.0",
+        "vnp_Command": "pay",
+        "vnp_TmnCode": vnp_TmnCode,
+        "vnp_Amount": str(int(amount) * 100), # VNPAY yêu cầu nhân 100
+        "vnp_CreateDate": datetime.now().strftime('%Y%m%d%H%M%S'),
+        "vnp_CurrCode": "VND",
+        "vnp_IpAddr": ip_addr or "127.0.0.1",
+        "vnp_Locale": "vn",
+        "vnp_OrderInfo": f"Thanh toan Premium STMSUAI {order_id}",
+        "vnp_OrderType": "other",
+        "vnp_ReturnUrl": vnp_ReturnUrl,
+        "vnp_TxnRef": order_id, 
+    }
+
+    # Sắp xếp tham số (Bắt buộc)
+    inputData = dict(sorted(inputData.items()))
+    query_string = urllib.parse.urlencode(inputData)
+
+    # Tạo checksum
+    if vnp_HashSecret:
+        secure_hash = hmac.new(
+            vnp_HashSecret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha512
+        ).hexdigest()
+        query_string += "&vnp_SecureHash=" + secure_hash
+
+    return vnp_Url + "?" + query_string
+
+# 2. API Tạo Giao Dịch
+@app.route('/api/payment/create', methods=['POST'])
+def create_payment_url():
+    user_id, err = get_user_id_from_token()
+    if err: return jsonify({"message": "Unauthorized"}), 401
+
+    data = request.get_json()
+    amount = data.get('amount', 50000) # Mặc định 50k
+    provider = data.get('provider', 'vnpay')
+
+    db = next(get_db())
+    try:
+        # Tạo mã đơn hàng: YYYYMMDDHHMMSS_UserID
+        order_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{user_id}"
+        
+        # Lưu vào DB trạng thái Pending
+        new_trans = Transaction(
+            user_id=user_id,
+            order_id=order_id,
+            amount=amount,
+            provider=provider,
+            status='pending'
+        )
+        db.add(new_trans)
+        db.commit()
+
+        payment_url = ""
+        if provider == 'vnpay':
+            ip_addr = request.remote_addr
+            payment_url = create_vnpay_url(order_id, amount, ip_addr)
+        
+        # TODO: Thêm logic MoMo ở đây nếu cần
+
+        return jsonify({"payment_url": payment_url})
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        return jsonify({"message": str(e)}), 500
+    finally:
+        db.close()
+
+# 3. API Xử lý kết quả trả về (Return URL / IPN)
+@app.route('/api/payment/vnpay-return', methods=['GET'])
+def vnpay_return():
+    inputData = request.args.to_dict()
+    vnp_SecureHash = inputData.get('vnp_SecureHash')
+    
+    # Xóa hash cũ để tính lại checksum
+    if 'vnp_SecureHash' in inputData: del inputData['vnp_SecureHash']
+    if 'vnp_SecureHashType' in inputData: del inputData['vnp_SecureHashType']
+
+    inputData = dict(sorted(inputData.items()))
+    query_string = urllib.parse.urlencode(inputData)
+    
+    # Lấy Secret Key từ .env
+    vnp_HashSecret = os.getenv("VNP_HASH_SECRET")
+    secure_hash = hmac.new(
+        vnp_HashSecret.encode('utf-8'), 
+        query_string.encode('utf-8'), 
+        hashlib.sha512
+    ).hexdigest()
+
+    db = next(get_db())
+    try:
+        order_id = inputData.get('vnp_TxnRef')
+        response_code = inputData.get('vnp_ResponseCode')
+        
+        # Tìm giao dịch trong DB
+        trans = db.query(Transaction).filter(Transaction.order_id == order_id).first()
+        if not trans: 
+            return jsonify({"status": "error", "message": "Không tìm thấy đơn hàng"}), 404
+
+        # Kiểm tra tính toàn vẹn dữ liệu (Checksum)
+        if secure_hash == vnp_SecureHash:
+            if response_code == "00": # Mã 00: Thanh toán thành công
+                
+                # Chỉ cập nhật nếu trạng thái cũ chưa phải là success (tránh lặp)
+                if trans.status != 'success':
+                    trans.status = 'success'
+                    trans.bank_code = inputData.get('vnp_BankCode')
+                    
+                    # --- [QUAN TRỌNG] LƯU TRẠNG THÁI PREMIUM VÀO DB ---
+                    user = db.query(User).filter(User.user_id == trans.user_id).first()
+                    if user:
+                        user.is_premium = True
+                        
+                        # Logic cộng dồn ngày hết hạn:
+                        # Nếu đang còn hạn -> Cộng thêm vào ngày hết hạn cũ
+                        # Nếu hết hạn hoặc chưa có -> Cộng thêm vào thời điểm hiện tại
+                        now = datetime.now()
+                        if user.premium_expiry and user.premium_expiry > now:
+                            user.premium_expiry = user.premium_expiry + timedelta(days=30)
+                        else:
+                            user.premium_expiry = now + timedelta(days=30)
+                            
+                        print(f"✅ Đã kích hoạt Premium cho User {user.username}. Hết hạn: {user.premium_expiry}")
+                    
+                    db.commit() # LƯU VÀO Ổ CỨNG DATABASE TẠI ĐÂY
+                
+                # Trả về thông tin mới nhất cho Frontend
+                # Frontend sẽ dùng thông tin này để update LocalStorage
+                updated_user = db.query(User).filter(User.user_id == trans.user_id).first()
+                
+                return jsonify({
+                    "status": "success", 
+                    "message": "Giao dịch thành công",
+                    "user": {
+                        "user_id": updated_user.user_id,
+                        "username": updated_user.username,
+                        "email": updated_user.email,
+                        "avatar_url": updated_user.avatar_url,
+                        "role": updated_user.role,
+                        "is_premium": updated_user.is_premium, # True
+                        "premium_expiry": updated_user.premium_expiry.isoformat() if updated_user.premium_expiry else None
+                    }
+                })
+            else:
+                # Trường hợp hủy thanh toán hoặc lỗi
+                trans.status = 'failed'
+                db.commit()
+                return jsonify({"status": "failed", "message": "Giao dịch không thành công"})
+        else:
+            return jsonify({"status": "error", "message": "Chữ ký không hợp lệ"}), 400
+            
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
 
 if __name__ == '__main__':
     is_main_process = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
 
+    # Worker nhắc lịch (Thread)
     if not app.debug or is_main_process:
         print("⏰ Starting Calendar Reminder Worker (THREAD)...")
+        # Lưu ý: Khi dùng eventlet, threading chuẩn có thể bị ảnh hưởng, 
+        # nhưng với socketio.run bên dưới, eventlet sẽ lo phần async.
         reminder_thread = threading.Thread(target=check_calendar_reminders, args=(app,), daemon=True)
         reminder_thread.start()
         print("✅ Worker started.")
-    else:
-        print("💡 Skipping worker initialization in reloader process.")
 
-    print("🚀 Starting Flask-SocketIO server with eventlet...")
-    socketio.run(app, host='::', port=5000, debug=True, use_reloader=False)
+    print("🚀 Starting Flask-SocketIO server with EVENTLET...")
+    
+    # QUAN TRỌNG: Xóa 'allow_unsafe_werkzeug=True' nếu có
+    # SocketIO sẽ tự động nhận diện eventlet vừa cài
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

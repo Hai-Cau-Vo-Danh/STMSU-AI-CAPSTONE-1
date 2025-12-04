@@ -3,9 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from 'react-dom'; 
 import "./WorkspaceDetail.css";
 import { 
-  BsPlus, BsThreeDots, BsPencil, BsTrash, BsCheck, 
-  BsPeopleFill, BsStar, BsStarFill, BsArrowLeft,
-  BsPersonPlus, BsChatDots, BsClipboardCheck, BsFileText,
+  BsPlus, BsPencil, BsTrash, BsCheck, BsStar, BsStarFill, BsArrowLeft,
   BsGearFill, BsGripVertical 
 } from "react-icons/bs";
 import { IoMdClose } from "react-icons/io";
@@ -34,14 +32,11 @@ import { SortableCard } from './SortableCard';
 import TaskCard from './TaskCard'; 
 import io from 'socket.io-client';
 import { workspaceService } from '../services/workspaceService';
-import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import CardDetailModal from './CardDetailModal'; 
-import avt from "../assets/Trangchu/avt.png"; 
 
 const SOCKET_URL = 'http://localhost:5000'; 
 
-// (Component DroppableList giữ nguyên)
 function DroppableList({ list, children }) {
   const { setNodeRef, isOver } = useDroppable({
     id: list.id,
@@ -61,11 +56,7 @@ function DroppableList({ list, children }) {
   );
 }
 
-// === (SỬA LỖI XUNG ĐỘT 3 - ĐÃ LÀM Ở BƯỚC TRƯỚC) ===
-// Thêm prop `activeDragItem` vào
 function SortableListColumn({ list, children, activeDragItem }) {
-  
-  // Kiểm tra xem có phải đang kéo THẺ không
   const isCardDragging = activeDragItem && activeDragItem.type === 'card';
 
   const {
@@ -80,16 +71,12 @@ function SortableListColumn({ list, children, activeDragItem }) {
     data: {
       type: 'list' 
     },
-    // Vô hiệu hóa Cột này NẾU đang kéo một Thẻ
     disabled: isCardDragging
   });
   
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    // Chỉ ẩn cột (opacity=0) KHI:
-    // 1. Cột này đang bị kéo (isDragging = true)
-    // 2. VÀ (&&) không phải là đang kéo thẻ (isCardDragging = false)
     opacity: (isDragging && !isCardDragging) ? 0 : 1, 
     height: '100%', 
   };
@@ -100,8 +87,6 @@ function SortableListColumn({ list, children, activeDragItem }) {
     </div>
   );
 }
-// === (KẾT THÚC SỬA LỖI 3) ===
-
 
 function WorkspaceDetail() {
   const { id } = useParams();
@@ -122,10 +107,8 @@ function WorkspaceDetail() {
   const [members, setMembers] = useState([]);
   
   const [selectedCard, setSelectedCard] = useState(null);
-  
   const [activeDragItem, setActiveDragItem] = useState(null);
 
-  // (Sensor đã sửa - giữ nguyên)
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -137,7 +120,6 @@ function WorkspaceDetail() {
     }),
   );
 
-  // (useEffect fetch data và socket giữ nguyên)
   useEffect(() => {
     const fetchWorkspaceData = async () => {
       try {
@@ -155,7 +137,6 @@ function WorkspaceDetail() {
     };
     fetchWorkspaceData();
     
-    // (Logic Socket.IO giữ nguyên)
     if (socketRef.current) { return; }
     const newSocket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
@@ -173,7 +154,6 @@ function WorkspaceDetail() {
       }
     });
 
-    // --- LISTENERS (giữ nguyên) ---
     newSocket.on('workspace-users', (users) => setOnlineUsers(users));
     newSocket.on('list-added', (data) => {
       if (data.workspaceId === id) setLists(prev => [...prev, data.list]);
@@ -225,7 +205,6 @@ function WorkspaceDetail() {
     };
   }, [id]);
 
-  // (Hàm handleDragStart giữ nguyên)
   const handleDragStart = (event) => {
     const { active } = event;
     const type = active.data.current?.type;
@@ -244,8 +223,9 @@ function WorkspaceDetail() {
     setActiveDragItem(null);
   };
   
-  
-  // (Hàm handleDragEnd giữ nguyên)
+  // ==========================================================
+  // === LOGIC KÉO THẢ (ĐÃ SỬA CHỐNG GIAN LẬN NGÀY NỘP) ===
+  // ==========================================================
   const handleDragEnd = async (event) => { 
     setActiveDragItem(null); 
     
@@ -259,7 +239,7 @@ function WorkspaceDetail() {
     
     const activeType = active.data.current?.type;
 
-    // === TRƯỜNG HỢP 1: KÉO DANH SÁCH (LIST) ===
+    // --- 1. KÉO LIST ---
     if (activeType === 'list') {
       const oldIndex = lists.findIndex(l => l.id === activeId);
       const newIndex = lists.findIndex(l => l.id === overId);
@@ -280,7 +260,7 @@ function WorkspaceDetail() {
       return; 
     }
     
-    // === TRƯỜNG HỢP 2: KÉO THẺ (CARD) ===
+    // --- 2. KÉO CARD ---
     if (activeType === 'card') {
       const activeListId = active.data.current?.listId;
       let overListId = over.data.current?.listId;
@@ -300,28 +280,53 @@ function WorkspaceDetail() {
       const overList = lists.find(list => list.id === overListId);
       if (!activeList || !overList) return;
 
-      // (Logic quy tắc nghiệp vụ giữ nguyên)
-      const activeListType = activeList.listType;
-      const overListType = overList.listType;
       const activeCard = activeList.cards.find(card => card.id === active.id);
       if (!activeCard) return;
 
-      if (activeListType === 'todo' && overListType !== 'todo') {
+      // --- (LOGIC KIỂM TRA QUY TẮC) ---
+      const activeListType = activeList.listType;
+      const overListType = overList.listType;
+
+      // >>> RULE 1: Kéo vào "In Progress"
+      if (overListType === 'in_progress' && activeListType !== 'in_progress') {
           if (!activeCard.assignee) {
-              alert('Vui lòng gán thành viên cho thẻ trước khi di chuyển!');
-              return; 
+              alert("⛔ CHẶN: Bạn phải gán thành viên (Assignee) chịu trách nhiệm trước khi bắt đầu làm!");
+              return; // Hủy kéo thả
           }
           if (!activeCard.dueDate) {
-              alert('Vui lòng đặt ngày hết hạn (Due Date) cho thẻ!');
-              return; 
+              alert("⛔ CHẶN: Bạn phải đặt ngày hết hạn (Due Date) để cam kết thời gian!");
+              return; // Hủy kéo thả
           }
       }
+
+      // >>> RULE 2: Kéo vào "Done" (ĐÃ SỬA LẠI)
+      // Điều kiện: Tự động lấy ngày hôm nay làm ngày nộp. User không được nhập.
       if (overListType === 'done' && activeListType !== 'done') {
-          const submitNote = window.prompt("Xác nhận hoàn thành: Vui lòng nhập thời gian/ghi chú submit:");
-          if (!submitNote) return;
+          
+          // Lấy ngày hiện tại (Hôm nay) chuẩn ISO YYYY-MM-DD
+          const today = new Date().toISOString().split('T')[0];
+          
+          // Kiểm tra hạn (Nếu card có due date)
+          if (activeCard.dueDate) {
+              const dueDateStr = new Date(activeCard.dueDate).toISOString().split('T')[0];
+              
+              // Nếu hôm nay > ngày hạn -> Trễ hạn
+              if (today > dueDateStr) {
+                  const confirmLate = window.confirm(
+                      `⚠️ CẢNH BÁO NỘP MUỘN!\n\n- Hạn chót: ${dueDateStr}\n- Ngày nộp thực tế: ${today} (Hôm nay)\n\nBạn đang nộp bài trễ hạn. Bạn có chắc chắn muốn hoàn thành task này không?`
+                  );
+                  if (!confirmLate) return; // User bấm Cancel -> Hủy kéo thả, task quay về chỗ cũ
+              } else {
+                  // Đúng hạn -> Im lặng hoặc thông báo nhỏ
+                  // alert("✅ Nộp đúng hạn!"); 
+              }
+          }
+          
+          // (Logic này đảm bảo tính trung thực, user không thể "fake" ngày nộp)
       }
+      // --- (KẾT THÚC LOGIC KIỂM TRA) ---
       
-      // Kéo thả trong cùng 1 list
+      // ... Xử lý di chuyển như bình thường
       if (activeListId === overListId) {
         const oldIndex = activeList.cards.findIndex(card => card.id === active.id);
         const newIndex = over.id === overListId 
@@ -343,7 +348,6 @@ function WorkspaceDetail() {
           setLists(lists); 
         }
       } else {
-        // Kéo thả sang list khác
         const activeCards = activeList.cards.filter(card => card.id !== active.id);
         const insertIndex = over.id === overListId 
           ? overList.cards.length 
@@ -369,7 +373,6 @@ function WorkspaceDetail() {
     }
   };
 
-  // (Các hàm addList, addCard, toggleStar, edit/delete list, delete card giữ nguyên)
   const handleAddList = async () => {
     if (!newListTitle.trim()) return;
     try {
@@ -472,7 +475,6 @@ function WorkspaceDetail() {
     }
   };
   
-  // (Phần JSX loading, error state giữ nguyên)
   if (loading) {
     return (
       <div className="workspace-detail-container">
@@ -498,7 +500,6 @@ function WorkspaceDetail() {
 
   return (
     <div className="workspace-detail-container">
-      {/* (Header giữ nguyên) */}
       <div className="workspace-detail-header">
         <div className="header-left-section">
           <button className="back-btn" onClick={() => navigate("/workspaces")}>
@@ -548,7 +549,6 @@ function WorkspaceDetail() {
         </div>
       </div>
 
-      {/* --- Board Area --- */}
       <DndContext
         sensors={dndSensors}
         collisionDetection={closestCenter}
@@ -557,7 +557,6 @@ function WorkspaceDetail() {
         onDragCancel={handleDragCancel}
       >
         <div className="board-lists">
-          
           <SortableContext
             items={lists.map(l => l.id)}
             strategy={horizontalListSortingStrategy}
@@ -566,13 +565,10 @@ function WorkspaceDetail() {
               <SortableListColumn 
                 key={list.id} 
                 list={list}
-                // (Truyền activeDragItem xuống - giữ nguyên)
                 activeDragItem={activeDragItem}
               >
-                
                 {(dragAttributes, dragListeners) => (
                   <div className="board-list">
-                    
                     {editingListId === list.id ? (
                       <div className="edit-list-form">
                         <input
@@ -588,9 +584,7 @@ function WorkspaceDetail() {
                         </div>
                       </div>
                     ) : (
-                      // (Phần Drag Handle đã sửa - giữ nguyên)
                       <div className="list-header" {...dragAttributes}>
-                        
                         <button 
                           className="list-drag-handle" 
                           {...dragListeners} 
@@ -622,10 +616,7 @@ function WorkspaceDetail() {
                       <DroppableList list={list}>
                         {list.cards.map((card) => (
                           <SortableCard 
-                              // === (ĐÂY LÀ SỬA LỖI TRẠNG THÁI CŨ) ===
-                              // Thay đổi key để "reset" thẻ khi chuyển cột
                               key={`${list.id}-${card.id}`}
-                              // === (KẾT THÚC SỬA LỖI) ===
                               card={card} 
                               listId={list.id} 
                               members={members}
@@ -646,7 +637,7 @@ function WorkspaceDetail() {
                           type="text"
                           placeholder="Nhập tiêu đề card..."
                           value={newCardTitle}
-                          onChange={(e) => setNewCardTitle(e.target.value)} // <--- SỬA LỖI TYPO
+                          onChange={(e) => setNewCardTitle(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleAddCard(list.id)}
                           autoFocus
                         />
@@ -672,10 +663,7 @@ function WorkspaceDetail() {
               </SortableListColumn> 
             ))}
           </SortableContext>
-          
 
-
-          {/* (Add list form giữ nguyên) */}
           {showAddList ? (
             <div className="add-list-form">
               <input
@@ -705,7 +693,6 @@ function WorkspaceDetail() {
           )}
         </div>
         
-        {/* (DragOverlay giữ nguyên) */}
         {createPortal(
           <DragOverlay 
             dropAnimation={{
@@ -716,7 +703,6 @@ function WorkspaceDetail() {
           >
             {activeDragItem ? (
               activeDragItem.type === 'list' ? (
-                // "Bóng ma" của CỘT
                 <div className="board-list is-dragging-overlay">
                   <div className="list-header">
                     <h3>{activeDragItem.title}</h3>
@@ -731,7 +717,6 @@ function WorkspaceDetail() {
                   </div>
                 </div>
               ) : (
-                // "Bóng ma" của THẺ
                 <TaskCard
                   task={activeDragItem}
                   members={members}
@@ -742,12 +727,8 @@ function WorkspaceDetail() {
           </DragOverlay>,
           document.body 
         )}
-        
       </DndContext>
-      {/* --- (KẾT THÚC SỬA) --- */}
 
-
-      {/* (CardDetailModal giữ nguyên) */}
       {selectedCard && (
         <CardDetailModal
           card={selectedCard}
