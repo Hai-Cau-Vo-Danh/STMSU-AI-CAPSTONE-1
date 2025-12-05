@@ -3,7 +3,7 @@ import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, Title } from 'chart.js';
 import { 
   BsPlayFill, BsPauseFill, BsStopFill, BsSkipEndFill, BsGearFill, 
-  BsCardChecklist, BsTrash, BsMusicNoteBeamed, BsFillVolumeUpFill, BsFillVolumeMuteFill 
+  BsCardChecklist, BsTrash, BsMusicNoteBeamed, BsFillVolumeUpFill, BsFillVolumeMuteFill, BsBarChartFill 
 } from 'react-icons/bs';
 import { IoClose } from 'react-icons/io5';
 import './Pomodoro.css'; 
@@ -15,7 +15,7 @@ import avt from "../assets/Trangchu/avt.png";
 
 ChartJS.register(ArcElement, Tooltip, Legend, Title);
 
-// (Các hằng số và hàm helper giữ nguyên)
+// (Các hằng số và hàm helper giữ nguyên logic cũ)
 const DEFAULT_SETTINGS = {
     focus: 25,
     shortBreak: 5,
@@ -43,7 +43,7 @@ const soundOptions = [
     { id: 'cafe', name: 'Quán Cafe', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' }, 
 ];
 
-// (Component PomodoroStats giữ nguyên)
+// (Component PomodoroStats giữ nguyên logic)
 const PomodoroStats = () => {
   const [chartData, setChartData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -141,7 +141,7 @@ const PomodoroStats = () => {
 
 
 const Pomodoro = () => {
-    // (Các state cũ giữ nguyên)
+    // (Giữ nguyên toàn bộ State và Logic cũ)
     const [settings, setSettings] = useState(() => {
         try {
             const saved = localStorage.getItem('pomodoroSettings');
@@ -165,14 +165,12 @@ const Pomodoro = () => {
     const [showTaskModal, setShowTaskModal] = useState(false); 
     const [modalLoading, setModalLoading] = useState(false); 
     
-    // --- (SỬA LỖI 1) Thêm 'no_due_date' vào state ---
     const [modalTaskGroups, setModalTaskGroups] = useState({ 
         overdue: [],
         today: [],
         upcoming: [],
-        no_due_date: [] // <-- (CODE MỚI)
+        no_due_date: [] 
     });
-    // --- (KẾT THÚC SỬA LỖI 1) ---
     
     const [showAudioPanel, setShowAudioPanel] = useState(false);
     const [currentSound, setCurrentSound] = useState(soundOptions[0]);
@@ -222,9 +220,7 @@ const Pomodoro = () => {
     };
 
 
-    // (Tất cả các hàm logic khác: startTimer, pauseTimer, stopAndResetTimer, handleSessionEnd, 
-    // handleSkip, saveSession, fetchHistory, handleSettingsChange, saveSettings, 
-    // ... ĐỀU GIỮ NGUYÊN ...
+    // (Tất cả các hàm logic xử lý timer, session, api... GIỮ NGUYÊN)
     const startTimer = () => {
         if (timeLeft <= 0) return; 
         sessionStartTimeRef.current = new Date(); 
@@ -323,7 +319,6 @@ const Pomodoro = () => {
              return;
          }
          const taskIdString = selectedTask ? selectedTask.id : null;
-         console.log(`Saving ${type} session for user ${userId}: ${durationMinutes} mins, Task: ${taskIdString}`);
          try {
              const data = await workspaceService.savePomodoroSession({
                  userId: userId,
@@ -333,7 +328,6 @@ const Pomodoro = () => {
                  type: type,
                  taskId: taskIdString 
              });
-             console.log("Session saved successfully");
              if (type === 'focus' && data.new_total_tomatoes) {
                  alert("Hoàn thành phiên tập trung!\nBạn nhận được +1 🍅");
              }
@@ -373,18 +367,16 @@ const Pomodoro = () => {
         }
     };
     
-    // --- (SỬA LỖI 2) Cập nhật handleOpenTaskModal ---
     const handleOpenTaskModal = async () => {
       setModalLoading(true);
       setShowTaskModal(true);
       try {
         const data = await workspaceService.getMyTasks(); 
-        // Đảm bảo tất cả các nhóm đều được khởi tạo
         setModalTaskGroups({
             overdue: data.overdue || [],
             today: data.today || [],
             upcoming: data.upcoming || [],
-            no_due_date: data.no_due_date || [] // <-- (CODE MỚI)
+            no_due_date: data.no_due_date || []
         });
       } catch (err) {
         console.error("Lỗi tải 'My Tasks' cho Modal:", err);
@@ -392,7 +384,6 @@ const Pomodoro = () => {
         setModalLoading(false);
       }
     };
-    // --- (KẾT THÚC SỬA LỖI 2) ---
     
     const handleSelectTask = (task) => {
       setSelectedTask(task);
@@ -420,158 +411,175 @@ const Pomodoro = () => {
     };
 
 
-    // ----- RENDER -----
+    // ----- RENDER (THAY ĐỔI LỚN VỀ CẤU TRÚC HTML) -----
     return (
         <div className="pomodoro-container">
             <audio ref={audioRef} />
 
-            {/* --- Buttons (giữ nguyên) --- */}
-            <button className="settings-toggle-btn" onClick={() => setShowSettings(true)}>
-                <BsGearFill /> Cài đặt
-            </button>
-            <button 
-              className="audio-toggle-btn" 
-              onClick={() => setShowAudioPanel(!showAudioPanel)}
-            >
-              <BsMusicNoteBeamed /> Âm thanh
-            </button>
+            {/* --- 1. Top Action Buttons (Nhóm nút trên cùng) --- */}
+            <div className="pomodoro-header-actions">
+                <button className="header-action-btn" onClick={() => setShowSettings(true)}>
+                    <BsGearFill /> Cài đặt
+                </button>
+                <button className="header-action-btn" onClick={() => setShowAudioPanel(!showAudioPanel)}>
+                    <BsMusicNoteBeamed /> Âm thanh
+                </button>
+                <button className="header-action-btn" onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory(); }}>
+                    <BsBarChartFill /> {showHistory ? 'Đóng TK' : 'Thống kê'}
+                </button>
+            </div>
 
+            {/* --- 2. Main Card (Phần hiển thị chính) --- */}
+            <div className="pomodoro-main-card">
+                 {/* Trạng thái (Vd: Tập trung Vòng 1/4) */}
+                 <h2 className="pomodoro-status-text">{modeDisplay()}</h2>
 
-            {/* --- Main Timer Display (giữ nguyên) --- */}
-             <div className="pomodoro-tomato-bg"> 
-                 <div className="pomodoro-digital-time">
-                     <h2>{formatTime(timeLeft)}</h2>
+                 {/* Đồng hồ hiển thị (Hộp đen số vàng) */}
+                 <div className="pomodoro-timer-display">
+                     {formatTime(timeLeft)}
                  </div>
-             </div>
-             <p className="pomodoro-mode-display">{modeDisplay()}</p>
-             
-            {/* --- Task Selector (giữ nguyên) --- */}
-            <div 
-              className="task-selector-box" 
-              onClick={handleOpenTaskModal} 
-              title={selectedTask ? `Đang tập trung cho: ${selectedTask.title}` : "Chọn công việc"}
-            >
-              <BsCardChecklist className="task-selector-icon" />
-              <span className="task-selector-text">
-                {selectedTask ? selectedTask.title : "Chọn công việc để tập trung..."}
-              </span>
-              {selectedTask && (
-                <button className="task-clear-btn" onClick={clearSelectedTask}>
-                  <IoClose />
-                </button>
-              )}
-            </div>
 
-
-            {/* --- Controls (giữ nguyên) --- */}
-            <div className="pomodoro-controls">
-                <button onClick={stopAndResetTimer} title="Dừng & Reset" disabled={!isRunning && timeLeft === settings[mode]*60}>
-                    <BsStopFill />
-                </button>
-                <button onClick={isRunning ? pauseTimer : startTimer} className="main-btn" title={isRunning ? 'Tạm dừng' : 'Bắt đầu'}>
-                    {isRunning ? <BsPauseFill /> : <BsPlayFill />}
-                </button>
-                <button onClick={handleSkip} title="Bỏ qua phiên" disabled={!isRunning && timeLeft === settings[mode]*60}>
-                    <BsSkipEndFill />
-                </button>
-            </div>
-
-            {/* --- Bảng Âm thanh (giữ nguyên) --- */}
-            {showAudioPanel && (
-              <div className="audio-panel panel">
-                <h3>Âm thanh môi trường</h3>
-                <p>Âm thanh sẽ tự động phát khi bạn bắt đầu phiên "Tập trung".</p>
-                <div className="sound-options">
-                  {soundOptions.map(sound => (
-                    <button
-                      key={sound.id}
-                      className={`sound-option ${currentSound.id === sound.id ? 'active' : ''}`}
-                      onClick={() => setCurrentSound(sound)}
+                 {/* Các nút điều khiển */}
+                 <div className="pomodoro-controls">
+                    {/* Nút Stop */}
+                    <button 
+                        className="control-btn secondary" 
+                        onClick={stopAndResetTimer} 
+                        title="Dừng & Reset" 
+                        disabled={!isRunning && timeLeft === settings[mode]*60}
                     >
-                      {sound.name}
+                        <BsStopFill />
                     </button>
-                  ))}
+
+                    {/* Nút Play/Pause (Hình cà chua) */}
+                    <button 
+                        onClick={isRunning ? pauseTimer : startTimer} 
+                        className="control-btn primary-tomato" 
+                        title={isRunning ? 'Tạm dừng' : 'Bắt đầu'}
+                    >
+                        {isRunning ? <BsPauseFill className="tomato-icon" /> : <BsPlayFill className="tomato-icon" />}
+                    </button>
+
+                    {/* Nút Skip */}
+                    <button 
+                        className="control-btn secondary" 
+                        onClick={handleSkip} 
+                        title="Bỏ qua phiên" 
+                        disabled={!isRunning && timeLeft === settings[mode]*60}
+                    >
+                        <BsSkipEndFill />
+                    </button>
                 </div>
-                <div className="volume-control">
-                  <BsFillVolumeMuteFill />
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={volume}
-                    onChange={handleVolumeChange}
-                    className="volume-slider"
-                  />
-                  <BsFillVolumeUpFill />
+            </div>
+
+            {/* --- 3. Task Selector (Thanh chọn việc phía dưới) --- */}
+            <div className="pomodoro-task-bar">
+                <div 
+                    className={`task-selector-dashed ${selectedTask ? 'has-task' : ''}`} 
+                    onClick={handleOpenTaskModal} 
+                    title={selectedTask ? selectedTask.title : "Chọn công việc"}
+                >
+                    <div className="left-content">
+                        <BsCardChecklist className="task-icon" />
+                        <span className="task-text">
+                            {selectedTask 
+                                ? <><span className="label">Đang làm:</span> {selectedTask.title}</>
+                                : "Đang làm gì? Bấm để chọn việc..."
+                            }
+                        </span>
+                    </div>
+                    {selectedTask && (
+                        <button className="task-clear-btn-mini" onClick={clearSelectedTask}>
+                            <IoClose />
+                        </button>
+                    )}
                 </div>
-              </div>
-            )}
+            </div>
 
 
-            {/* --- Bảng Lịch sử & Thống kê (giữ nguyên) --- */}
-            <button className="history-toggle-btn" onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory(); }}>
-                 {showHistory ? 'Ẩn Lịch sử & Thống kê' : 'Xem Lịch sử & Thống kê'}
-             </button>
-             {showHistory && (
-                 <div className="pomodoro-history panel">
-                     
-                     <h3>Thống kê Tập trung</h3>
-                     <PomodoroStats />
-                     
-                     <h3 style={{marginTop: '20px'}}>Lịch sử phiên Focus</h3>
-                     {historyLoading && <p>Đang tải...</p>}
-                     {historyError && <p className="error-msg">Lỗi: {historyError}</p>}
-                     {!historyLoading && !historyError && history.length === 0 && <p>Chưa có dữ liệu.</p>}
-                     {!historyLoading && !historyError && history.length > 0 && (
-                         <ul>
-                            {history.map(s => {
-                                let actualDurationText = `${s.duration} phút`; 
-                                try {
-                                    const start = new Date(s.startTime);
-                                    const end = new Date(s.endTime);
-                                    const diffSeconds = Math.round((end - start) / 1000); 
-                                    if (diffSeconds >= 0 && diffSeconds < (s.duration * 60 * 2)) { 
-                                        const actualMinutes = Math.floor(diffSeconds / 60);
-                                        const actualSeconds = diffSeconds % 60;
-                                        actualDurationText = `${actualMinutes} phút ${actualSeconds} giây`; 
-                                    }
-                                } catch (e) { console.error("Error calculating actual duration:", e); }
-                                
-                                return (
-                                    <li key={s.id}>
-                                        {new Date(s.endTime).toLocaleString('vi-VN', { 
-                                            day: '2-digit', month: '2-digit', year: 'numeric', 
-                                            hour: '2-digit', minute: '2-digit' 
-                                        })} 
-                                        - {actualDurationText} / ({s.duration} phút dự định) 
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                     )}
-                 </div>
-             )}
+            {/* --- Panels: Âm thanh & Lịch sử (Hiển thị có điều kiện bên dưới) --- */}
+            <div className="pomodoro-panels-area">
+                {showAudioPanel && (
+                <div className="audio-panel panel-modern">
+                    <h3>Âm thanh môi trường</h3>
+                    <div className="sound-options">
+                    {soundOptions.map(sound => (
+                        <button
+                        key={sound.id}
+                        className={`sound-option ${currentSound.id === sound.id ? 'active' : ''}`}
+                        onClick={() => setCurrentSound(sound)}
+                        >
+                        {sound.name}
+                        </button>
+                    ))}
+                    </div>
+                    <div className="volume-control">
+                    <BsFillVolumeMuteFill />
+                    <input
+                        type="range" min="0" max="1" step="0.05" value={volume} onChange={handleVolumeChange} className="volume-slider"
+                    />
+                    <BsFillVolumeUpFill />
+                    </div>
+                </div>
+                )}
+
+                {showHistory && (
+                    <div className="pomodoro-history panel-modern">
+                        <h3>Thống kê Tập trung</h3>
+                        <PomodoroStats />
+                        <h3 style={{marginTop: '20px'}}>Lịch sử phiên Focus</h3>
+                        {historyLoading && <div className="spinner-small"></div>}
+                        {historyError && <p className="error-msg">Lỗi: {historyError}</p>}
+                        {!historyLoading && !historyError && history.length === 0 && <p>Chưa có dữ liệu.</p>}
+                        {!historyLoading && !historyError && history.length > 0 && (
+                            <ul className="history-list">
+                                {history.map(s => {
+                                    let actualDurationText = `${s.duration} phút`; 
+                                    try {
+                                        const start = new Date(s.startTime);
+                                        const end = new Date(s.endTime);
+                                        const diffSeconds = Math.round((end - start) / 1000); 
+                                        if (diffSeconds >= 0 && diffSeconds < (s.duration * 60 * 2)) { 
+                                            const actualMinutes = Math.floor(diffSeconds / 60);
+                                            const actualSeconds = diffSeconds % 60;
+                                            actualDurationText = `${actualMinutes}p ${actualSeconds}s`; 
+                                        }
+                                    } catch (e) { console.error("Error calculating actual duration:", e); }
+                                    
+                                    return (
+                                        <li key={s.id}>
+                                            <span className="time">{new Date(s.endTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+                                            <span className="duration">{actualDurationText}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+                )}
+            </div>
 
 
-            {/* --- Settings Modal (giữ nguyên) --- */}
+            {/* --- Settings Modal (Logic cũ, Style mới) --- */}
             {showSettings && (
                 <div className="settings-modal-overlay" onClick={() => setShowSettings(false)}>
-                    <div className="settings-modal panel" onClick={(e) => e.stopPropagation()}>
+                    <div className="settings-modal panel-modern" onClick={(e) => e.stopPropagation()}>
                         <h3>Cài đặt Pomodoro</h3>
-                        <div className="setting-item">
-                            <label htmlFor="focus">Thời gian Tập trung (phút):</label>
-                            <input type="number" id="focus" name="focus" min="1" value={settings.focus} onChange={handleSettingsChange} />
+                        <div className="setting-group">
+                            <div className="setting-item">
+                                <label htmlFor="focus">Tập trung (phút)</label>
+                                <input type="number" id="focus" name="focus" min="1" value={settings.focus} onChange={handleSettingsChange} />
+                            </div>
+                            <div className="setting-item">
+                                <label htmlFor="shortBreak">Nghỉ ngắn</label>
+                                <input type="number" id="shortBreak" name="shortBreak" min="1" value={settings.shortBreak} onChange={handleSettingsChange} />
+                            </div>
+                            <div className="setting-item">
+                                <label htmlFor="longBreak">Nghỉ dài</label>
+                                <input type="number" id="longBreak" name="longBreak" min="1" value={settings.longBreak} onChange={handleSettingsChange} />
+                            </div>
                         </div>
-                        <div className="setting-item">
-                            <label htmlFor="shortBreak">Nghỉ ngắn (phút):</label>
-                            <input type="number" id="shortBreak" name="shortBreak" min="1" value={settings.shortBreak} onChange={handleSettingsChange} />
-                        </div>
-                        <div className="setting-item">
-                            <label htmlFor="longBreak">Nghỉ dài (phút):</label>
-                            <input type="number" id="longBreak" name="longBreak" min="1" value={settings.longBreak} onChange={handleSettingsChange} />
-                        </div>
-                         <div className="setting-item">
+                         <div className="setting-item full-width">
                             <label htmlFor="cyclesBeforeLongBreak">Số vòng trước khi Nghỉ dài:</label>
                             <input type="number" id="cyclesBeforeLongBreak" name="cyclesBeforeLongBreak" min="1" value={settings.cyclesBeforeLongBreak} onChange={handleSettingsChange} />
                         </div>
@@ -591,7 +599,7 @@ const Pomodoro = () => {
                 </div>
             )}
             
-            {/* --- (SỬA LỖI 3) Task Selection Modal --- */}
+            {/* --- Task Selection Modal (Logic cũ) --- */}
             {showTaskModal && (
               <div className="modal-overlay" onClick={() => setShowTaskModal(false)}>
                 <div className="task-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -606,20 +614,15 @@ const Pomodoro = () => {
                       <div className="loading-state"><div className="spinner-small"></div></div>
                     ) : (
                       <>
-                        {/* (SỬA LỖI 3) Đổi tên 'tasks' thành 'groupTasks' để tránh trùng lặp */}
                         {Object.entries(modalTaskGroups).map(([groupName, groupTasks]) => (
-                          // (SỬA LỖI 3) Thêm key={groupName}
                           groupTasks.length > 0 && (
                             <div key={groupName} className="task-group">
-                              
-                              {/* (SỬA LỖI 3) Thêm tiêu đề cho nhóm 'no_due_date' */}
                               <h4>
                                 {groupName === 'overdue' ? 'Quá hạn' : 
                                  groupName === 'today' ? 'Hôm nay' : 
                                  groupName === 'upcoming' ? 'Sắp tới' : 
                                  'Không có ngày hạn'}
                               </h4>
-                              
                               {groupTasks.map(task => (
                                 <div 
                                   key={task.id} 
@@ -639,7 +642,6 @@ const Pomodoro = () => {
                 </div>
               </div>
             )}
-            {/* --- (KẾT THÚC SỬA LỖI 3) --- */}
             
         </div>
     );

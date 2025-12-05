@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './AIAssistant.css';
-import aiLogo from '../assets/Trangchu/art8.png'; // Đảm bảo đường dẫn đúng
-import { IoImageOutline, IoCloseCircle, IoDocumentTextOutline, IoTrashOutline, IoRemove, IoSend } from 'react-icons/io5'; 
+import aiLogo from '../assets/Trangchu/art8.png';
+import { IoImageOutline, IoCloseCircle, IoDocumentTextOutline, IoTrashOutline, IoRemove, IoSend, IoLockClosedOutline } from 'react-icons/io5'; // Thêm IoLockClosedOutline
 import { FaMicrophone } from 'react-icons/fa'; 
+// Import PremiumModal (Cần thiết để mở modal nâng cấp)
+import PremiumModal from './PremiumModal'; 
 
 const getUserId = () => {
     try {
@@ -14,9 +16,24 @@ const getUserId = () => {
     return null;
 };
 
+// **********************************************
+// ********* HÀM MỚI: KIỂM TRA PREMIUM *********
+// **********************************************
+const getIsPremium = () => {
+    try {
+      const userString = localStorage.getItem("user");
+      if (userString) return JSON.parse(userString)?.is_premium || false;
+    } catch (e) { console.error("Lỗi đọc isPremium:", e); }
+    return false;
+};
+// **********************************************
+
 const AIAssistant = () => {
   // --- STATE QUẢN LÝ ĐÓNG/MỞ ---
   const [isOpen, setIsOpen] = useState(false); 
+  // --- STATE PREMIUM (MỚI) ---
+  const [isPremium, setIsPremium] = useState(getIsPremium());
+  const [showPremiumModal, setShowPremiumModal] = useState(false); // State cho modal
 
   // --- STATE TIN NHẮN ---
   const [messages, setMessages] = useState(() => {
@@ -41,6 +58,33 @@ const AIAssistant = () => {
   const textInputRef = useRef(null); 
 
   function getTime() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+  // --- USE EFFECT: Cập nhật isPremium khi mở cửa sổ & lắng nghe Local Storage ---
+  useEffect(() => {
+      const checkPremiumStatus = () => {
+          setIsPremium(getIsPremium());
+      };
+      
+      // Chạy 1 lần khi mở cửa sổ
+      if (isOpen) {
+          checkPremiumStatus();
+      }
+      
+      // Lắng nghe sự kiện (Đảm bảo cập nhật khi User thanh toán thành công)
+      const handleStorageChange = () => {
+          checkPremiumStatus();
+      };
+      window.addEventListener('storage', handleStorageChange);
+      
+      // Lắng nghe sự kiện custom nếu bạn có (từ Header/PaymentResult)
+      // Giả định bạn có dispatchEvent('user-data-updated')
+      window.addEventListener('user-data-updated', handleStorageChange);
+
+      return () => {
+          window.removeEventListener('storage', handleStorageChange);
+          window.removeEventListener('user-data-updated', handleStorageChange);
+      };
+  }, [isOpen]); // Chạy lại khi cửa sổ mở/đóng
 
   // --- USE EFFECT: AUTO SAVE & SCROLL ---
   useEffect(() => { localStorage.setItem('mi_mi_chat_history', JSON.stringify(messages)); }, [messages]);
@@ -89,6 +133,7 @@ const AIAssistant = () => {
   };
 
   const handleVoiceInput = () => {
+    if (!isPremium) return setShowPremiumModal(true); // Khóa
     if (!('webkitSpeechRecognition' in window)) return alert("Trình duyệt không hỗ trợ voice.");
     const recognition = new window.webkitSpeechRecognition();
     recognition.lang = 'vi-VN';
@@ -104,6 +149,7 @@ const AIAssistant = () => {
   };
 
   const handleImageSelect = (e) => {
+    if (!isPremium) return setShowPremiumModal(true); // Khóa
     if (e.target.files[0]) {
       const reader = new FileReader();
       reader.onloadend = () => setSelectedImage(reader.result);
@@ -113,6 +159,7 @@ const AIAssistant = () => {
   };
 
   const handleDocUpload = async (e) => {
+    if (!isPremium) return setShowPremiumModal(true); // Khóa
     const file = e.target.files[0];
     if (!file) return;
     setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: `📄 File: **${file.name}**`, time: getTime() }]);
@@ -139,6 +186,8 @@ const AIAssistant = () => {
 
   const sendMessage = async () => {
     if (!inputValue.trim() && !selectedImage) return;
+    if (!isPremium) return setShowPremiumModal(true); // Khóa
+    
     const newMsg = { id: Date.now(), sender: 'user', text: inputValue, image: selectedImage, time: getTime() };
     setMessages(prev => [...prev, newMsg]);
     
@@ -157,6 +206,14 @@ const AIAssistant = () => {
         })
       });
       const data = await res.json();
+      
+      // Xử lý lỗi 403 (Forbidden) từ backend
+      if (res.status === 403) {
+          setMessages(prev => [...prev, { id: Date.now()+1, sender: 'ai', text: data.reply || "🚫 Lỗi: Tài khoản chưa phải Premium.", time: getTime() }]);
+          setShowPremiumModal(true); // Hiển thị modal
+          return;
+      }
+      
       setMessages(prev => [...prev, { id: Date.now()+1, sender: 'ai', text: data.reply, time: getTime() }]);
       
       // ============================================================
@@ -211,86 +268,125 @@ const AIAssistant = () => {
   // --- RENDER LOGIC ---
   if (!isOpen) {
       return (
-          <button className="ai-floating-btn" onClick={() => setIsOpen(true)}>
+          <button className="ai-floating-btn" onClick={() => setIsOpen(true)} title="Mở Trợ lý AI MiMi Pro">
               <img src={aiLogo} className="ai-floating-icon" alt="AI" />
           </button>
       );
   }
 
-  return (
-    <div className="ai-floating-window">
-      {/* HEADER */}
-      <div className="ai-header">
-        <div className="ai-header-left">
-          <img src={aiLogo} style={{width: '32px', height: '32px', borderRadius: '50%'}} alt="AI"/>
-          <div className="ai-header-info">
-            <h2>MiMi Pro</h2>
-            <p>Trợ lý ảo</p>
-          </div>
-        </div>
-        <div className="window-controls">
-          <button onClick={clearHistory} title="Xóa chat"><IoTrashOutline size={18}/></button>
-          <button onClick={() => setIsOpen(false)} title="Thu nhỏ"><IoRemove size={22}/></button>
-        </div>
-      </div>
+  // **********************************************
+  // ********* LOGIC KHÓA TÍNH NĂNG AI *********
+  // **********************************************
+  const LockedContent = () => (
+    <div className="ai-locked-content">
+        <IoLockClosedOutline size={64} color="#764ba2" />
+        <h2>Tính năng AI Trợ lý bị khóa</h2>
+        {/* SỬA DÒNG NÀY: Dùng <br/> thay vì \n */}
+        <p>
+            Trợ lý ảo <strong>MiMi Pro</strong> chỉ dành cho thành viên Premium để mở khóa các tính năng:
+            <br/>- Lập lịch thông minh.
+            <br/>- Phân tích tài liệu (PDF, Word).
+            <br/>- Gợi ý & Tạo nội dung bằng giọng nói.
+        </p>
+        <button 
+            className="btn-unlock-premium" 
+            onClick={() => setShowPremiumModal(true)}
+        >
+            Nâng cấp lên Pro AI
+        </button>
+    </div>
+);
+  // **********************************************
 
-      {/* CHAT AREA */}
-      <div className="chat-area">
-        {messages.map(msg => (
-          <div key={msg.id} className={`msg ${msg.sender}`}>
-            {msg.sender === 'ai' && <div className="msg-avatar"><img src={aiLogo} alt="AI"/></div>}
-            <div className="msg-body">
-              {msg.image && <img src={msg.image} className="msg-image-preview" alt="Upload" />}
-              {msg.text && <div className="msg-bubble"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown></div>}
-              <span className="msg-time">{msg.time}</span>
+
+  return (
+    <>
+      <div className="ai-floating-window">
+        {/* HEADER */}
+        <div className="ai-header">
+          <div className="ai-header-left">
+            <img src={aiLogo} style={{width: '32px', height: '32px', borderRadius: '50%'}} alt="AI"/>
+            <div className="ai-header-info">
+              <h2>MiMi Pro</h2>
+              <p>{isPremium ? 'Đã kích hoạt' : 'Miễn phí (Bị khóa)'}</p>
             </div>
           </div>
-        ))}
-        {loading && (
-          <div className="msg ai">
-            <div className="msg-avatar"><img src={aiLogo} alt="AI"/></div>
-            <div className="msg-bubble typing"><span className="dot"></span><span className="dot"></span><span className="dot"></span></div>
+          <div className="window-controls">
+            <button onClick={clearHistory} title="Xóa chat" disabled={!isPremium}><IoTrashOutline size={18}/></button> {/* Khóa nút xóa nếu không phải premium */}
+            <button onClick={() => setIsOpen(false)} title="Thu nhỏ"><IoRemove size={22}/></button>
+          </div>
+        </div>
+
+        {/* CHAT AREA HOẶC LOCKED SCREEN */}
+        {isPremium ? (
+          <div className="chat-area">
+            {messages.map(msg => (
+              <div key={msg.id} className={`msg ${msg.sender}`}>
+                {msg.sender === 'ai' && <div className="msg-avatar"><img src={aiLogo} alt="AI"/></div>}
+                <div className="msg-body">
+                  {msg.image && <img src={msg.image} className="msg-image-preview" alt="Upload" />}
+                  {msg.text && <div className="msg-bubble"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown></div>}
+                  <span className="msg-time">{msg.time}</span>
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="msg ai">
+                <div className="msg-avatar"><img src={aiLogo} alt="AI"/></div>
+                <div className="msg-bubble typing"><span className="dot"></span><span className="dot"></span><span className="dot"></span></div>
+              </div>
+            )}
+            <div ref={chatEndRef}></div>
+          </div>
+        ) : (
+          <div className="chat-area">
+              <LockedContent />
           </div>
         )}
-        <div ref={chatEndRef}></div>
-      </div>
 
-      {/* PREVIEW */}
-      {selectedImage && (
-        <div className="image-preview-container">
-          <img src={selectedImage} alt="Preview" />
-          <button onClick={() => setSelectedImage(null)} className="remove-img-btn"><IoCloseCircle /></button>
+
+        {/* PREVIEW */}
+        {selectedImage && isPremium && (
+          <div className="image-preview-container">
+            <img src={selectedImage} alt="Preview" />
+            <button onClick={() => setSelectedImage(null)} className="remove-img-btn"><IoCloseCircle /></button>
+          </div>
+        )}
+
+        {/* INPUT AREA */}
+        <div className="chat-input-area">
+          <input type="file" ref={fileInputRef} style={{display:'none'}} accept="image/*" onChange={handleImageSelect} />
+          <input type="file" ref={fileDocInputRef} style={{display:'none'}} accept=".pdf,.docx" onChange={handleDocUpload} />
+
+          <button className="action-btn" onClick={() => fileDocInputRef.current.click()} title="Gửi file" disabled={!isPremium}><IoDocumentTextOutline size={18}/></button>
+          <button className="action-btn" onClick={() => fileInputRef.current.click()} title="Gửi ảnh" disabled={!isPremium}><IoImageOutline size={18}/></button>
+          
+          <input 
+            ref={textInputRef} 
+            className="chat-input" 
+            placeholder={isPremium ? "Nhập..." : "Đã khóa, vui lòng nâng cấp"} 
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyPress}
+            disabled={loading || !isPremium} // Khóa input nếu không Premium
+            autoFocus 
+          />
+          
+          <button className={`action-btn ${isListening ? 'listening' : ''}`} onClick={handleVoiceInput} title="Nói" disabled={!isPremium || loading}>
+              <FaMicrophone size={16} color={isListening ? 'red' : 'inherit'}/>
+          </button>
+          
+          <button className="send-btn" onClick={sendMessage} disabled={(!inputValue.trim() && !selectedImage) || !isPremium || loading}>
+              <IoSend size={16}/>
+          </button>
         </div>
-      )}
-
-      {/* INPUT AREA */}
-      <div className="chat-input-area">
-        <input type="file" ref={fileInputRef} style={{display:'none'}} accept="image/*" onChange={handleImageSelect} />
-        <input type="file" ref={fileDocInputRef} style={{display:'none'}} accept=".pdf,.docx" onChange={handleDocUpload} />
-
-        <button className="action-btn" onClick={() => fileDocInputRef.current.click()} title="Gửi file"><IoDocumentTextOutline size={18}/></button>
-        <button className="action-btn" onClick={() => fileInputRef.current.click()} title="Gửi ảnh"><IoImageOutline size={18}/></button>
-        
-        <input 
-          ref={textInputRef} 
-          className="chat-input" 
-          placeholder="Nhập..." 
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyPress}
-          disabled={loading}
-          autoFocus 
-        />
-        
-        <button className={`action-btn ${isListening ? 'listening' : ''}`} onClick={handleVoiceInput} title="Nói">
-            <FaMicrophone size={16} color={isListening ? 'red' : 'inherit'}/>
-        </button>
-        
-        <button className="send-btn" onClick={sendMessage} disabled={!inputValue.trim() && !selectedImage}>
-            <IoSend size={16}/>
-        </button>
       </div>
-    </div>
+      
+      {/* MODAL PREMIUM */}
+      {showPremiumModal && (
+        <PremiumModal onClose={() => setShowPremiumModal(false)} />
+      )}
+    </>
   );
 };
 

@@ -649,7 +649,20 @@ def ai_chat():
     image_base64 = data.get('image', None) 
 
     if not user_id: return jsonify({"reply": "⚠️ Lỗi: Thiếu User ID"}), 400
-
+    
+    db_session = next(get_db())
+    try:
+        user = db_session.query(User).filter(User.user_id == user_id).first()
+        if not user or not user.is_premium:
+            return jsonify({
+                "reply": "🚫 Tính năng Trợ lý AI chỉ dành cho thành viên **Premium**. Vui lòng nâng cấp để sử dụng."
+            }), 403 # HTTP 403 Forbidden
+    except Exception as e:
+        print(f"Lỗi kiểm tra Premium: {e}")
+        return jsonify({"reply": "Lỗi máy chủ khi kiểm tra quyền."}), 500
+    finally:
+        db_session.close()
+    
     try:
         # 1. VISION (Xử lý ảnh)
         if image_base64:
@@ -815,6 +828,19 @@ def generate_workspace_from_file():
     # 1. Xác thực
     user_id, token_error = get_user_id_from_token()
     if token_error: return jsonify({"message": "Chưa đăng nhập"}), 401
+    
+    db_session = next(get_db())
+    try:
+        user = db_session.query(User).filter(User.user_id == user_id).first()
+        if not user or not user.is_premium:
+            return jsonify({
+                "message": "🚫 Tính năng Phân tích File chỉ dành cho thành viên **Premium**."
+            }), 403 # HTTP 403 Forbidden
+    except Exception as e:
+        print(f"Lỗi kiểm tra Premium (File): {e}")
+        return jsonify({"message": "Lỗi máy chủ khi kiểm tra quyền."}), 500
+    finally:
+        db_session.close()
 
     # 2. Nhận file
     if 'file' not in request.files:

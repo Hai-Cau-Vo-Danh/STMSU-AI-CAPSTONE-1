@@ -1,796 +1,302 @@
-/* --- Pomodoro Container & General --- */
+/* --- Global Container --- */
 .pomodoro-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start; /* Align content towards top */
-  min-height: calc(100vh - 70px); /* Adjust for header if applicable */
   padding: 40px 20px;
-  text-align: center;
+  min-height: calc(100vh - 70px);
+  background-color: #F8F9FA; /* Nền xám nhạt như dashboard */
   color: var(--text-color);
-  background-color: var(--bg-color);
-  transition: background-color 0.3s ease, color 0.3s ease;
-  position: relative; /* For positioning settings button */
+  font-family: 'Inter', sans-serif;
 }
 
-/* --- Tomato Background & Time Display --- */
-.pomodoro-tomato-bg {
-  width: 300px; /* Adjust size as needed */
-  height: 300px;
-  background-color: #FF6347; /* Tomato color */
-  border-radius: 50%;
-  position: relative;
-  margin-bottom: 15px; /* Space below tomato */
-  box-shadow: inset 0 -10px 20px rgba(0, 0, 0, 0.2), /* Inner shadow bottom */
-              0 10px 20px rgba(0, 0, 0, 0.15);     /* Outer shadow */
+/* --- 1. Header Action Buttons --- */
+.pomodoro-header-actions {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.header-action-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-/* Optional: Add a green stem */
-.pomodoro-tomato-bg::before {
-    content: '';
-    position: absolute;
-    top: -20px; /* Position above */
-    width: 60px;
-    height: 40px;
-    background-color: #2E8B57; /* SeaGreen */
-    border-radius: 50% 50% 0 0 / 100% 100% 0 0; /* Leaf shape */
-    transform: rotate(-10deg);
-    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
-}
-/* Optional: subtle texture */
-.pomodoro-tomato-bg::after {
-     content: '';
-     position: absolute;
-     inset: 5px; /* Slightly inside */
-     border-radius: 50%;
-     background: radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 40%); /* Highlight */
-}
-
-
-.pomodoro-digital-time {
-  background-color: rgba(0, 0, 0, 0.6); /* Dark background for digits */
-  color: #FFD700; /* Gold-like color for digits */
-  padding: 15px 30px;
-  border-radius: 10px;
-  font-family: 'Orbitron', sans-serif; /* Digital-like font (add import if needed) */
-  /* Or use a system monospace font */
-  /* font-family: 'Courier New', Courier, monospace; */
-  font-weight: bold;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  z-index: 1; /* Ensure time is above pseudo-elements */
-}
-
-.pomodoro-digital-time h2 {
-  font-size: 4rem; /* Adjust size */
-  margin: 0;
-  letter-spacing: 5px; /* Space out digits */
-}
-
-.pomodoro-mode-display {
-  font-size: 1.1rem;
-  color: var(--text-secondary-color);
+  gap: 8px;
+  padding: 8px 16px;
+  background-color: #E9ECEF; /* Xám nhạt của nút */
+  color: #495057;
+  border: none;
+  border-radius: 20px; /* Pill shape */
+  font-size: 14px;
   font-weight: 600;
-  margin-bottom: 30px; /* Space before controls */
-  text-transform: capitalize;
-}
-
-/* --- Controls --- */
-.pomodoro-controls {
-  display: flex;
-  justify-content: center;
-  gap: 25px; /* More space */
-  align-items: center;
-  margin-bottom: 30px; /* Space before history/settings */
-}
-
-.pomodoro-controls button {
-  border: none;
-  background: #FFF0E1; /* Light creamy color */
-  color: #A0522D; /* Sienna - brownish color */
-  font-size: 24px;
-  border-radius: 50%;
-  width: 60px;
-  height: 60px;
   cursor: pointer;
   transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15), inset 0 2px 2px rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(160, 82, 45, 0.3); /* Subtle sienna border */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
-.pomodoro-controls button:hover:not(:disabled) {
-  background: #FFE4C4; /* Bisque - slightly darker */
-  color: #8B4513; /* SaddleBrown */
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2), inset 0 2px 2px rgba(255, 255, 255, 0.5);
-}
-.pomodoro-controls button:active:not(:disabled) {
-    transform: translateY(1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(0, 0, 0, 0.2);
-}
-
-
-/* Main button larger */
-.pomodoro-controls button.main-btn {
-  width: 75px;
-  height: 75px;
-  font-size: 36px;
-  background: #FF7F50; /* Coral */
-  color: white;
-  box-shadow: 0 5px 10px rgba(255, 127, 80, 0.4), inset 0 2px 2px rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-.pomodoro-controls button.main-btn:hover:not(:disabled) {
-    background: #FF6347; /* Tomato */
-    box-shadow: 0 7px 14px rgba(255, 99, 71, 0.5), inset 0 2px 2px rgba(255, 255, 255, 0.5);
-}
-
-
-.pomodoro-controls button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
-    transform: none;
-}
-
-/* --- Settings & History Buttons --- */
-.settings-toggle-btn, .history-toggle-btn {
-    position: absolute;
-    top: 20px;
-    padding: 8px 15px;
-    background-color: var(--bg-secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    color: var(--text-secondary-color);
-    font-size: 0.9em;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    box-shadow: 0 2px 5px var(--shadow-color);
-}
-.settings-toggle-btn { right: 20px; }
-.history-toggle-btn { left: 20px; }
-
-.settings-toggle-btn:hover, .history-toggle-btn:hover {
-    background-color: var(--bg-color);
-    color: var(--primary-color);
-    border-color: var(--primary-color);
-    transform: translateY(-1px);
-}
-
-/* --- Panels (Settings & History common style) --- */
-.panel {
-    background-color: var(--bg-secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 20px;
-    margin-top: 20px;
-    width: 100%;
-    max-width: 500px; /* Limit width */
-    box-shadow: 0 4px 10px var(--shadow-color);
-}
-.panel h3 {
-    margin: 0 0 15px 0;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--primary-color);
-}
-.panel ul {
-    list-style: none;
-    padding: 0;
-    max-height: 200px; /* Limit history height */
-    overflow-y: auto;
-}
-.panel li {
-    padding: 6px 0;
-    font-size: 0.9em;
-    color: var(--text-secondary-color);
-    border-bottom: 1px dashed var(--border-color);
-}
-.panel li:last-child { border-bottom: none; }
-
-.error-msg { color: #dc3545; font-weight: bold; }
-
-/* --- Settings Modal --- */
-.settings-modal-overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 20px;
-}
-.settings-modal {
-    /* Uses .panel styles */
-    max-width: 400px; /* Smaller width for settings */
-}
-
-.setting-item {
-    margin-bottom: 15px;
-    display: flex;
-    flex-direction: column; /* Stack label and input */
-    gap: 5px;
-}
-.setting-item label {
-    font-size: 0.9em;
-    font-weight: 500;
-    color: var(--text-secondary-color);
-}
-.setting-item input[type="number"] {
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    width: 80px; /* Smaller width for number inputs */
-}
-.setting-item.checkbox {
-    flex-direction: row; /* Align checkbox and label horizontally */
-    align-items: center;
-    gap: 10px;
-}
-.setting-item.checkbox input[type="checkbox"] {
-    width: auto;
-}
-.setting-item.checkbox label {
-    margin-bottom: 0; /* Remove bottom margin for checkbox label */
-}
-
-.settings-actions {
-    margin-top: 20px;
-    padding-top: 15px;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-}
-.settings-actions button {
-    padding: 8px 15px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s ease;
-}
-.settings-actions button:not(.save) { /* Cancel button style */
-    background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary-color);
-}
-.settings-actions button:not(.save):hover {
-    background-color: var(--bg-secondary-color);
-    border-color: var(--text-secondary-color);
-}
-.settings-actions button.save {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-}
-.settings-actions button.save:hover {
-    background-color: var(--secondary-color);
-}
-.history-area {
-    position: absolute; /* Position relative to pomodoro-container */
-    left: 20px;       /* Adjust spacing from left */
-    top: 150px;       /* Adjust spacing from top (below header/controls maybe) */
-    width: 250px;     /* Set a width for the history area */
-    display: flex;
-    flex-direction: column; /* Stack button and panel */
-    align-items: flex-start; /* Align items to the left */
-    z-index: 5; /* Ensure it's above the main timer if needed */
-}
-
-/* Adjust History Toggle Button positioning if needed (it's already absolute) */
-.history-toggle-btn {
-    position: static; /* Remove absolute positioning from button itself */
-    margin-bottom: 10px; /* Add space below button */
-    /* Keep other styles like padding, border, etc. */
-}
-
-/* Ensure History Panel takes appropriate width */
-.pomodoro-history.panel {
-    width: 100%; /* Take full width of its container (.history-area) */
-    max-width: none; /* Override previous max-width */
-    margin-top: 0; /* Remove top margin if set previously */
-}
-.task-selector-box {
-  width: 100%;
-  max-width: 400px; /* Giới hạn chiều rộng */
-  padding: 12px 16px;
-  background-color: var(--bg-secondary-color);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 20px; /* Khoảng cách với nút controls */
-}
-.task-selector-box:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-.task-selector-icon {
-  font-size: 20px;
-  color: var(--text-secondary-color);
-}
-.task-selector-text {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-color);
-  /* Ngăn text dài phá layout */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* Kiểu chữ mờ khi chưa chọn */
-.task-selector-box:not(:has(.task-clear-btn)) .task-selector-text {
-  color: var(--text-secondary-color);
-  font-style: italic;
-}
-
-.task-clear-btn {
-  background: var(--bg-color);
-  border: none;
-  color: var(--text-secondary-color);
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.task-clear-btn:hover {
-  background: var(--border-color);
-  color: var(--text-color);
-}
-
-
-/* --- (CODE MỚI) Style cho Task Modal --- */
-/* (Tái sử dụng style từ Dashboard.css và tùy chỉnh) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-  animation: modalFadeIn 0.2s ease-out;
-}
-@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-.task-modal-content {
-  background: var(--bg-secondary-color);
-  border-radius: 16px;
-  width: 90%;
-  max-width: 500px; /* Nhỏ hơn modal MyTasks */
-  height: 60vh; 
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-  animation: modalSlideUp 0.3s ease-out;
-}
-@keyframes modalSlideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-
-.task-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.task-modal-header h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-color);
-  margin: 0;
-}
-.close-modal-btn {
-  font-size: 24px;
-  color: var(--text-secondary-color);
-  background: var(--bg-color);
-  border: none;
-  border-radius: 50%;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.close-modal-btn:hover {
-  background: var(--border-color);
-  transform: rotate(90deg);
-}
-
-.task-modal-list {
-  padding: 16px 24px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.task-modal-list .loading-state {
-  padding: 40px;
-}
-.task-modal-list .spinner-small {
-  width: 24px;
-  height: 24px;
-  margin: 0 auto 16px;
-  border: 3px solid rgba(102, 126, 234, 0.2);
-  border-top: 3px solid var(--primary-color);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-
-.task-modal-list .task-group h4 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-secondary-color);
-  text-transform: uppercase;
-  margin: 0 0 8px 0;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border-color);
-}
-.task-modal-list .task-group h4.overdue { color: #ef4444; }
-.task-modal-list .task-group h4.today { color: #f59e0b; }
-
-.task-modal-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--bg-color);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.task-modal-item:hover {
-  background: var(--bg-secondary-color);
-  border-color: var(--primary-color);
-}
-.task-modal-item .task-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-color);
-}
-.task-modal-item .task-origin {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary-color);
-  background: var(--bg-secondary-color);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-.task-selector-box {
-  width: 100%;
-  max-width: 400px; /* Giới hạn chiều rộng */
-  padding: 12px 16px;
-  background-color: var(--bg-secondary-color);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 20px; /* Khoảng cách với nút controls */
-}
-.task-selector-box:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-.task-selector-icon {
-  font-size: 20px;
-  color: var(--text-secondary-color);
-}
-.task-selector-text {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-color);
-  /* Ngăn text dài phá layout */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* Kiểu chữ mờ khi chưa chọn */
-.task-selector-box:not(:has(.task-clear-btn)) .task-selector-text {
-  color: var(--text-secondary-color);
-  font-style: italic;
-}
-
-.task-clear-btn {
-  background: var(--bg-color);
-  border: none;
-  color: var(--text-secondary-color);
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.task-clear-btn:hover {
-  background: var(--border-color);
-  color: var(--text-color);
-}
-
-
-/* --- (CODE MỚI) Style cho Task Modal --- */
-/* (Tái sử dụng style từ Dashboard.css và tùy chỉnh) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-  animation: modalFadeIn 0.2s ease-out;
-}
-@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-.task-modal-content {
-  background: var(--bg-secondary-color);
-  border-radius: 16px;
-  width: 90%;
-  max-width: 500px; /* Nhỏ hơn modal MyTasks */
-  height: 60vh; 
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-  animation: modalSlideUp 0.3s ease-out;
-}
-@keyframes modalSlideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-
-.task-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.task-modal-header h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-color);
-  margin: 0;
-}
-.close-modal-btn {
-  font-size: 24px;
-  color: var(--text-secondary-color);
-  background: var(--bg-color);
-  border: none;
-  border-radius: 50%;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.close-modal-btn:hover {
-  background: var(--border-color);
-  transform: rotate(90deg);
-}
-
-.task-modal-list {
-  padding: 16px 24px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.task-modal-list .loading-state {
-  padding: 40px;
-}
-.task-modal-list .spinner-small {
-  width: 24px;
-  height: 24px;
-  margin: 0 auto 16px;
-  border: 3px solid rgba(102, 126, 234, 0.2);
-  border-top: 3px solid var(--primary-color);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-
-.task-modal-list .task-group h4 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-secondary-color);
-  text-transform: uppercase;
-  margin: 0 0 8px 0;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border-color);
-}
-.task-modal-list .task-group h4.overdue { color: #ef4444; }
-.task-modal-list .task-group h4.today { color: #f59e0b; }
-
-.task-modal-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--bg-color);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.task-modal-item:hover {
-  background: var(--bg-secondary-color);
-  border-color: var(--primary-color);
-}
-.task-modal-item .task-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-color);
-}
-.task-modal-item .task-origin {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary-color);
-  background: var(--bg-secondary-color);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-/* --- (CODE MỚI) Style cho Bảng Âm thanh --- */
-.audio-toggle-btn {
-  position: absolute;
-  top: 20px;
-  /* (ĐÃ SỬA) Đẩy nút Lịch sử sang trái */
-  left: 20px; 
-  /* (ĐÃ SỬA) Đặt nút Âm thanh bên cạnh nút Cài đặt */
-  right: 120px; 
-  padding: 8px 15px;
-  background-color: var(--bg-secondary-color);
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  color: var(--text-secondary-color);
-  font-size: 0.9em;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-shadow: 0 2px 5px var(--shadow-color);
-}
-.audio-toggle-btn:hover {
-  background-color: var(--bg-color);
-  color: var(--primary-color);
-  border-color: var(--primary-color);
+.header-action-btn:hover {
+  background-color: #DEE2E6;
   transform: translateY(-1px);
 }
 
-.audio-panel {
-  /* Dùng chung class .panel */
+/* --- 2. Main Card --- */
+.pomodoro-main-card {
+  background: white;
+  border-radius: 24px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+  padding: 40px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: 100%;
   max-width: 500px;
-  margin-top: 0;
+  margin-bottom: 30px;
+}
+
+.pomodoro-status-text {
+  font-size: 16px;
+  color: #6C757D;
   margin-bottom: 20px;
-}
-.audio-panel p {
-  font-size: 13px;
-  color: var(--text-secondary-color);
-  margin-top: -10px;
-  margin-bottom: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.sound-options {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-bottom: 20px;
+/* Digital Timer Box */
+.pomodoro-timer-display {
+  background-color: #343A40; /* Nền đen xám */
+  color: #FFC107; /* Màu vàng của số */
+  font-family: 'Courier New', monospace; /* Hoặc font số điện tử nếu có */
+  font-size: 3.5rem;
+  font-weight: 700;
+  padding: 10px 40px;
+  border-radius: 12px;
+  letter-spacing: 4px;
+  margin-bottom: 30px;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.3);
 }
 
-.sound-option {
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-color);
-  color: var(--text-color);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.sound-option:hover {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-}
-.sound-option.active {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-}
-
-.volume-control {
+/* Controls Row */
+.pomodoro-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: var(--text-secondary-color);
+  gap: 20px;
 }
-.volume-control svg {
+
+.control-btn {
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Secondary Buttons (Stop, Skip) */
+.control-btn.secondary {
+  width: 50px;
+  height: 50px;
+  background-color: #E9ECEF;
+  color: #495057;
+  border-radius: 12px; /* Square with rounded corners */
   font-size: 20px;
 }
-.volume-slider {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 6px;
-  background: var(--border-color);
-  outline: none;
-  border-radius: 3px;
-  transition: opacity 0.2s;
+.control-btn.secondary:hover:not(:disabled) {
+  background-color: #DEE2E6;
 }
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  background: var(--primary-color);
-  cursor: pointer;
-  border-radius: 50%;
-}
-.volume-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: var(--primary-color);
-  cursor: pointer;
-  border-radius: 50%;
-  border: none;
-}
-.stats-chart-container {
-  width: 100%;
-  max-width: 350px; /* Giới hạn kích thước biểu đồ tròn */
-  margin: 0 auto 20px auto; /* Căn giữa và tạo khoảng cách */
+.control-btn.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* (Ghi đè .panel ul để không ảnh hưởng đến biểu đồ) */
-.pomodoro-history.panel ul {
-  padding-left: 20px; /* Thêm lại padding cho danh sách */
-  list-style: disc; /* Dùng dấu chấm cho dễ nhìn */
+/* Primary Button (Tomato Play) */
+.control-btn.primary-tomato {
+  width: 80px;
+  height: 70px; /* Hơi dẹt giống quả cà chua */
+  background: radial-gradient(circle at 30% 30%, #FF6347, #DD2C00); /* Tomato red gradient */
+  border-radius: 50%;
+  box-shadow: 0 5px 15px rgba(221, 44, 0, 0.4);
+  position: relative;
+  font-size: 28px;
+  color: white;
 }
 
-.pomodoro-history.panel li {
-  padding: 8px 0; /* Tăng khoảng cách */
+/* Green Stem (Cuống lá) */
+.control-btn.primary-tomato::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 10px;
+  background-color: #2E8B57;
+  border-radius: 5px;
+  z-index: 1;
 }
+
+.control-btn.primary-tomato:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 20px rgba(221, 44, 0, 0.5);
+}
+
+.tomato-icon {
+  z-index: 2;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+}
+
+/* --- 3. Task Bar (Thanh chọn việc nét đứt) --- */
+.pomodoro-task-bar {
+  width: 100%;
+  max-width: 800px;
+}
+
+.task-selector-dashed {
+  width: 100%;
+  padding: 15px 20px;
+  background-color: transparent;
+  border: 2px dashed #ADB5BD; /* Nét đứt màu xám */
+  border-radius: 50px; /* Bo tròn mạnh */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #6C757D;
+}
+
+.task-selector-dashed:hover {
+  border-color: #6C757D;
+  background-color: rgba(0,0,0,0.02);
+}
+.task-selector-dashed.has-task {
+    border-style: solid;
+    border-color: var(--primary-color);
+    background-color: white;
+    color: var(--text-color);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.left-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.task-icon { font-size: 20px; }
+.task-text { font-size: 15px; font-weight: 500; }
+.task-text .label { font-weight: normal; color: #ADB5BD; margin-right: 5px; }
+
+.task-clear-btn-mini {
+  background: none; border: none; color: #ADB5BD; cursor: pointer; font-size: 18px;
+  display: flex; align-items: center;
+}
+.task-clear-btn-mini:hover { color: #DC3545; }
+
+/* --- 4. Panels & Modals Area --- */
+.pomodoro-panels-area {
+  width: 100%;
+  max-width: 500px;
+  margin-top: 20px;
+}
+
+.panel-modern {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+}
+
+.panel-modern h3 {
+  font-size: 16px;
+  margin: 0 0 15px 0;
+  color: #343A40;
+  border-bottom: 1px solid #E9ECEF;
+  padding-bottom: 10px;
+}
+
+/* Sound Options Grid */
+.sound-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+.sound-option {
+  padding: 10px;
+  border: 1px solid #DEE2E6;
+  border-radius: 8px;
+  background: white;
+  color: #495057;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sound-option.active {
+  background-color: #343A40;
+  color: white;
+  border-color: #343A40;
+}
+
+/* Volume Slider */
+.volume-control {
+  display: flex; align-items: center; gap: 10px; color: #6C757D;
+}
+.volume-slider { flex: 1; accent-color: #343A40; }
+
+/* History List */
+.history-list {
+  list-style: none; padding: 0; max-height: 200px; overflow-y: auto;
+}
+.history-list li {
+  display: flex; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px dashed #E9ECEF; font-size: 13px; color: #495057;
+}
+
+/* Settings Modal Specifics */
+.settings-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px);
+}
+.settings-modal {
+  width: 90%; max-width: 400px;
+}
+.setting-group {
+    display: flex; gap: 10px; margin-bottom: 15px;
+}
+.setting-item {
+    display: flex; flex-direction: column; gap: 5px; flex: 1;
+}
+.setting-item.full-width { flex: none; width: 100%; margin-bottom: 15px; }
+.setting-item label { font-size: 12px; color: #6C757D; font-weight: 600; }
+.setting-item input[type="number"] {
+    padding: 8px; border: 1px solid #DEE2E6; border-radius: 6px; width: 100%;
+}
+.setting-item.checkbox {
+    flex-direction: row; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.setting-item.checkbox input { width: auto; }
+.setting-item.checkbox label { margin: 0; font-size: 13px; font-weight: normal; }
+
+.settings-actions {
+    display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid #E9ECEF;
+}
+.settings-actions button {
+    padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500;
+}
+.settings-actions button.save { background: #343A40; color: white; }
+.settings-actions button:not(.save) { background: #F8F9FA; color: #495057; }
+
+/* Modal Task (Reuse & Update) */
+.modal-overlay { animation: fadeIn 0.2s; }
+.task-modal-content { animation: slideUp 0.3s; background: white; border-radius: 16px; }
+.task-modal-header { border-bottom: 1px solid #F1F3F5; padding: 15px 20px; }
+.task-modal-list { padding: 15px 20px; }
+.task-group h4 { color: #ADB5BD; font-size: 12px; letter-spacing: 1px; margin-top: 15px; }
+.task-modal-item {
+    background: #F8F9FA; border: 1px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.task-modal-item:hover {
+    background: white; border-color: #DEE2E6; box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
